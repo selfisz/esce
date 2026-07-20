@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; font-src 'none';">
-<title>Offline Table Studio V7.4</title>
+<title>Offline Table Studio V7.5</title>
 <style>
 :root,[data-theme="navy"]{--bg:#dfe7f2;--chrome:#0f1c2e;--chrome2:#16253b;--panel:#fff;--panel2:#f4f7fb;--line:#c9d5e5;--text:#142033;--muted:#607084;--accent:#2563eb;--accent2:#1d4ed8;--soft:#e8f0ff;--head:#1a3354;--headText:#f5f8fc;--zebra:#eef3f9;--sel:#d9e8ff;--ok:#0f766e;--danger:#be123c;--shadow:0 12px 40px rgba(15,28,46,.12);--font:"Segoe UI",system-ui,-apple-system,sans-serif;--mono:Consolas,"Cascadia Mono",monospace}
 [data-theme="green"]{--bg:#dcebe3;--chrome:#0b2a24;--chrome2:#12352e;--accent:#0f766e;--accent2:#0d9488;--soft:#d8f3ee;--head:#134e4a;--sel:#c5efe7;--zebra:#eaf6f1}
@@ -210,7 +210,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <div class="mark">OT</div>
       <div>
         <input class="wb-title" id="wbTitle" value="Skoroszyt bez nazwy" spellcheck="false">
-        <div class="wb-meta" id="wbMeta">V7.4 · zakładki · Excel-lite</div>
+        <div class="wb-meta" id="wbMeta">V7.5 · Rejestr · Excel-lite</div>
       </div>
       <div class="chrome-actions">
         <span class="offline-pill" id="offlinePill" title="Brak sieci: CSP blokuje connect/fetch/CDN. Dane tylko w tej karcie przeglądarki (+ schematy w localStorage).">Offline · sandbox</span>
@@ -227,6 +227,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button type="button" class="ribbon-tab" data-tab="widok" role="tab">Widok</button>
       <button type="button" class="ribbon-tab" data-tab="zaznaczenie" role="tab">Zaznaczenie</button>
       <button type="button" class="ribbon-tab" data-tab="narzedzia" role="tab">Narzędzia</button>
+      <button type="button" class="ribbon-tab" data-tab="rejestr" role="tab">Rejestr</button>
       <button type="button" class="ribbon-tab" data-tab="eksport" role="tab">Eksport</button>
     </div>
     <div class="ribbon active" id="ribbon-dane" data-panel="dane" role="tabpanel">
@@ -279,6 +280,18 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm" id="btnCompare" type="button" title="Przecięcie wierszy po wspólnej kolumnie (np. PESEL)">Porównaj karty</button>
       <button class="btn sm" id="btnDedup" type="button">Deduplikacja</button>
       <button class="btn sm" id="btnGroup" type="button">Grupuj</button>
+    </div>
+    <div class="ribbon" id="ribbon-rejestr" data-panel="rejestr" role="tabpanel">
+      <button class="btn sm" id="btnRegOpen" type="button" title="Utwórz lub otwórz kartę Rejestr (pamięć lokalna w skoroszycie)">Otwórz Rejestr</button>
+      <button class="btn sm" id="btnRegMerge" type="button" title="Dopisz/scal osoby z bieżącej karty do Rejestru po PESEL (zaznaczone albo wszystkie)">Scal → Rejestr</button>
+      <button class="btn sm" id="btnRegEnrich" type="button" title="Dodaj Stan/Komplet z Rejestru do bieżącej listy (bez zmiany zwykłego wklejania)">Wzbogać z Rejestru</button>
+      <button class="btn sm primary" id="btnRegComplete" type="button" title="Zaznaczone osoby: wszystkie systemy = dziś" style="color:#fff">Komplet dziś</button>
+      <span class="sep"></span>
+      <button class="btn sm" id="btnRegFilterTodo" type="button">Do zrobienia</button>
+      <button class="btn sm" id="btnRegFilterPartial" type="button">Częściowo</button>
+      <button class="btn sm" id="btnRegFilterOver" type="button">&gt;100 dni</button>
+      <button class="btn sm" id="btnRegFilterOk" type="button">OK / Dziś</button>
+      <button class="btn sm" id="btnRegFilterClear" type="button">Wyczyść filtr stanu</button>
     </div>
     <div class="ribbon" id="ribbon-eksport" data-panel="eksport" role="tabpanel">
       <div class="menu-wrap">
@@ -341,7 +354,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
         <button class="btn sm light" id="btnHideAll" type="button">Ukryj</button>
       </div>
       <div class="cols" id="columnList"></div>
-      <div class="foot">Edycja: dwuklik / Enter / F2 / pisanie. Strzałki + Shift = zakres. Delete czyści. Ctrl+C/V na zakresie.<br><strong>Offline:</strong> brak CDN/fetch — CSP sandbox w pliku HTML.</div>
+      <div class="foot">Zwykła obróbka = zwykła karta. Pamięć między listami = zakładka <strong>Rejestr</strong> (Scal / Wzbogać / Komplet dziś). Zapisz JSON lokalnie.<br><strong>Offline:</strong> brak CDN/fetch — CSP sandbox.</div>
     </aside>
   </div>
   <div class="statusbar"><span>Karta <strong id="stSheet">Dane</strong></span><span>Wiersze <strong id="stRows">0</strong></span><span>Widoczne <strong id="stVis">0</strong></span><span>Ukryte <strong id="stHid">0</strong></span><span>Zaznaczone <strong id="stSel">0</strong></span><span id="stStats">—</span></div>
@@ -395,6 +408,24 @@ const DEFAULT_STATUSES = [
   {id:'ok', label:'Załatwione', color:'green'},
   {id:'czekaj', label:'Czekaj', color:'blue'}
 ];
+const REG_SHEET='Rejestr';
+const REG_CYCLE_DAYS=100;
+const REG_SYSTEMS=['KAWA','SINF','UFG','JPK','INFZ'];
+const REG_META=['Stan','Komplet','Źródła','Notatka'];
+const REG_STATUS={
+  todo:'Do zrobienia',
+  partial:'Częściowo',
+  overdue:'Przeterminowany',
+  ok:'OK',
+  today:'Dziś'
+};
+const REG_STATUS_COLOR={
+  'Do zrobienia':'yellow',
+  'Częściowo':'orange',
+  'Przeterminowany':'red',
+  'OK':'green',
+  'Dziś':'blue'
+};
 const $=id=>document.getElementById(id);
 
 const uid=()=>'s'+Math.random().toString(36).slice(2,9);
@@ -1254,6 +1285,18 @@ function renderChips(){
   let any=false;
   if(App.activeSchema){ any=true; const c=document.createElement('span'); c.className='chip'; c.innerHTML='Schemat: '+App.activeSchema+' <button type="button" title="Odłącz">×</button>';
     c.querySelector('button').onclick=()=>{App.activeSchema=null; renderChips();}; bar.append(c); }
+  const stanCi=sh.columns.indexOf('Stan');
+  if(stanCi>=0){
+    any=true;
+    const counts={};
+    sh.rows.forEach(r=>{ const s=r[stanCi]||'—'; counts[s]=(counts[s]||0)+1; });
+    const due=(counts[REG_STATUS.todo]||0)+(counts[REG_STATUS.partial]||0)+(counts[REG_STATUS.overdue]||0);
+    const ok=(counts[REG_STATUS.ok]||0)+(counts[REG_STATUS.today]||0);
+    const c=document.createElement('span'); c.className='chip';
+    c.textContent='Rejestr-stan: do zrobienia '+due+' · OK/Dziś '+ok;
+    c.title='Kolory wierszy = Stan z cyklu '+REG_CYCLE_DAYS+' dni';
+    bar.append(c);
+  }
   if(sh.filter){ any=true; const c=document.createElement('span'); c.className='chip'; c.innerHTML='Globalnie: „'+sh.filter+'” <button type="button">×</button>';
     c.querySelector('button').onclick=()=>{pushUndo(); sh.filter=''; $('filterInput').value=''; render();}; bar.append(c);}
   Object.entries(sh.colFilters||{}).forEach(([ci,f])=>{
@@ -1701,7 +1744,7 @@ function updateStatus(sh,idxs){
   ensureHidden(sh);
   $('stSheet').textContent=sh.name; $('stRows').textContent=sh.rows.length; $('stVis').textContent=idxs.length;
   $('stHid').textContent=sh.hiddenRows.size; $('stSel').textContent=sh.selected.size;
-  $('wbMeta').textContent=`V7.4 · ${App.sheets.length} kart · ${idxs.length}/${sh.rows.length} wierszy · Ctrl+C: ${App.copyMode==='archive'?'→ Archiwum':'kopiuj'}`;
+  $('wbMeta').textContent=`V7.5 · ${App.sheets.length} kart · ${idxs.length}/${sh.rows.length} wierszy · Ctrl+C: ${App.copyMode==='archive'?'→ Archiwum':'kopiuj'}`;
   $('printTitle').textContent=App.workbook; $('printMeta').textContent=`Karta: ${sh.name} · ${new Date().toLocaleString('pl-PL')}`;
   const ci=sh.activeCol>=0?sh.activeCol:(visCols(sh)[0]??-1); if(ci<0){$('stStats').textContent='—'; return;}
   const use=sh.selected.size?[...sh.selected]:idxs; const nums=[]; use.forEach(ri=>{const n=toNum(sh.rows[ri][ci]); if(n!=null) nums.push(n);});
@@ -2194,6 +2237,318 @@ function moveSelectedToNew(){ transferSelectedRows({move:true}); }
 function sendSelectedToSheet(id){ transferSelectedRows({move:false, targetId:id}); }
 function moveSelectedToSheet(id){ transferSelectedRows({move:true, targetId:id}); }
 
+function todayISO(){
+  const d=new Date();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return d.getFullYear()+'-'+m+'-'+day;
+}
+function normPesel(v){ return norm(v).replace(/\s+/g,'').replace(/-/g,''); }
+function parseISODate(s){
+  const t=norm(s);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(t)){ const d=new Date(t+'T00:00:00'); return isNaN(d)?null:d; }
+  const m=t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if(m){ const d=new Date(+m[3], +m[2]-1, +m[1]); return isNaN(d)?null:d; }
+  return null;
+}
+function daysBetween(a,b){ return Math.floor((b-a)/(24*3600*1000)); }
+function findKeyColumn(sh){
+  if(!sh||!sh.columns.length) return -1;
+  let i=sh.columns.findIndex(c=>/pesel/i.test(String(c)));
+  if(i<0) i=sh.columns.findIndex(c=>/^nip$/i.test(norm(c)));
+  return i;
+}
+function ensureCol(sh, name, width){
+  let ci=sh.columns.indexOf(name);
+  if(ci>=0) return ci;
+  if(sh.columns.length>=MAX) return -1;
+  ci=sh.columns.length;
+  sh.columns.push(name);
+  sh.order.push(ci);
+  sh.visible.push(true);
+  sh.widths.push(width||120);
+  sh.rows.forEach(r=>{ while(r.length<sh.columns.length) r.push(''); });
+  return ci;
+}
+function getRegistrySheet(){ return App.sheets.find(s=>s.name===REG_SHEET)||null; }
+function ensureRegistrySheet(switchTo){
+  let reg=getRegistrySheet();
+  if(!reg){
+    const cols=['PESEL', ...REG_SYSTEMS, ...REG_META];
+    reg=newSheet(REG_SHEET, {
+      columns:cols,
+      rows:[],
+      order:cols.map((_,i)=>i),
+      visible:cols.map(()=>true),
+      widths:cols.map((n)=>n==='PESEL'?130:n==='Źródła'||n==='Notatka'?160:100)
+    });
+    App.sheets.push(reg);
+  }else{
+    ensureCol(reg,'PESEL',130);
+    REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
+    REG_META.forEach(n=>ensureCol(reg,n, n==='Źródła'||n==='Notatka'?160:110));
+  }
+  if(switchTo) App.activeId=reg.id;
+  return reg;
+}
+function registryColMap(reg){
+  const m={};
+  reg.columns.forEach((n,i)=>{ m[n]=i; });
+  return m;
+}
+function computePersonStatus(dates){
+  const today=todayISO();
+  const todayD=parseISODate(today);
+  const parsed=dates.map(parseISODate);
+  const filled=parsed.filter(Boolean);
+  if(!filled.length) return {stan:REG_STATUS.todo, komplet:''};
+  if(filled.length<dates.length) return {stan:REG_STATUS.partial, komplet:''};
+  const oldest=filled.reduce((a,b)=>a<b?a:b);
+  const age=daysBetween(oldest, todayD);
+  const komplet=oldest.toISOString().slice(0,10);
+  if(age>REG_CYCLE_DAYS) return {stan:REG_STATUS.overdue, komplet};
+  if(filled.every(d=>d.toISOString().slice(0,10)===today)) return {stan:REG_STATUS.today, komplet};
+  return {stan:REG_STATUS.ok, komplet};
+}
+function refreshRegistryDerived(reg){
+  if(!reg) return;
+  const map=registryColMap(reg);
+  const sysIdx=REG_SYSTEMS.map(n=>map[n]).filter(i=>i!=null&&i>=0);
+  const stanCi=map['Stan'], kompCi=map['Komplet'];
+  if(stanCi==null) return;
+  reg.rows.forEach((row,ri)=>{
+    const dates=sysIdx.map(ci=>row[ci]||'');
+    const {stan,komplet}=computePersonStatus(dates);
+    row[stanCi]=stan;
+    if(kompCi!=null) row[kompCi]=komplet;
+    const color=REG_STATUS_COLOR[stan];
+    if(color) reg.rowColors[ri]=color; else delete reg.rowColors[ri];
+  });
+}
+function registryIndexByPesel(reg){
+  const map=registryColMap(reg);
+  const pci=map['PESEL'];
+  const idx=new Map();
+  if(pci==null) return idx;
+  reg.rows.forEach((r,i)=>{
+    const k=normPesel(r[pci]);
+    if(k) idx.set(k,i);
+  });
+  return idx;
+}
+function pickKeyColumnInteractive(sh){
+  let ci=findKeyColumn(sh);
+  if(ci>=0) return ci;
+  if(!sh.columns.length) return -1;
+  const list=sh.columns.map((c,i)=>letter(sh.order.indexOf(i)>=0?sh.order.indexOf(i):i)+' · '+c).join('\n');
+  const ans=prompt('Brak kolumny PESEL/NIP.\nPodaj literę kolumny klucza (A, B, …):\n'+list, 'A');
+  if(ans==null) return -1;
+  const letterUp=norm(ans).toUpperCase();
+  const orderPos=LETTERS.indexOf(letterUp);
+  if(orderPos>=0 && orderPos<sh.order.length) return sh.order[orderPos];
+  const byName=sh.columns.findIndex(c=>norm(c).toLowerCase()===norm(ans).toLowerCase());
+  return byName;
+}
+function appendSourceTag(existing, tag){
+  const t=norm(tag); if(!t) return existing||'';
+  const parts=String(existing||'').split(';').map(s=>s.trim()).filter(Boolean);
+  if(parts.includes(t)) return parts.join('; ');
+  parts.push(t);
+  return parts.join('; ');
+}
+function mergeActiveIntoRegistry(){
+  const src=active();
+  if(!src||!src.rows.length){ toast('Brak danych do scalenia'); return; }
+  if(src.name===REG_SHEET){ toast('Jesteś już w Rejestrze'); return; }
+  const keyCi=pickKeyColumnInteractive(src);
+  if(keyCi<0){ toast('Anulowano — potrzebny klucz PESEL/NIP'); return; }
+
+  pushUndo();
+  const reg=ensureRegistrySheet(false);
+  ensureCol(reg,'PESEL',130);
+  REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
+  REG_META.forEach(n=>ensureCol(reg,n,160));
+  const reserved=new Set(['PESEL', ...REG_SYSTEMS, ...REG_META]);
+  src.columns.forEach((name, sci)=>{
+    if(reserved.has(name) || /pesel/i.test(name)) return;
+    ensureCol(reg, name, src.widths[sci]||140);
+  });
+
+  const regMap=registryColMap(reg);
+  const pci=regMap['PESEL'];
+  const byPesel=registryIndexByPesel(reg);
+  const idxs=src.selected.size?[...src.selected].sort((a,b)=>a-b):src.rows.map((_,i)=>i);
+  const tag=(src.name||'lista')+' '+todayISO();
+  let added=0, updated=0, skipped=0;
+
+  idxs.forEach(ri=>{
+    const key=normPesel(src.rows[ri][keyCi]);
+    if(!key){ skipped++; return; }
+    let destRi=byPesel.get(key);
+    if(destRi==null){
+      const row=Array.from({length:reg.columns.length},()=>'');
+      row[pci]=key;
+      destRi=reg.rows.length;
+      reg.rows.push(row);
+      byPesel.set(key, destRi);
+      added++;
+    }else updated++;
+
+    src.columns.forEach((name, sci)=>{
+      let tci=regMap[name];
+      if(/pesel/i.test(name)) tci=pci;
+      if(tci==null) return;
+      if(REG_SYSTEMS.includes(name) || name==='Stan' || name==='Komplet') return;
+      const val=src.rows[ri][sci];
+      if(name==='Źródła'){
+        reg.rows[destRi][tci]=appendSourceTag(reg.rows[destRi][tci], tag);
+        return;
+      }
+      if(norm(val)==='' && norm(reg.rows[destRi][tci])!=='') return;
+      if(tci===pci){ reg.rows[destRi][pci]=key; return; }
+      if(norm(val)!=='') reg.rows[destRi][tci]=val;
+    });
+    const zci=regMap['Źródła'];
+    if(zci!=null) reg.rows[destRi][zci]=appendSourceTag(reg.rows[destRi][zci], tag);
+  });
+
+  refreshRegistryDerived(reg);
+  render();
+  toast('Rejestr: +'+added+' nowych, '+updated+' zaktualizowanych'+(skipped?', bez klucza: '+skipped:''));
+}
+function enrichActiveFromRegistry(){
+  const sh=active();
+  if(!sh||!sh.rows.length){ toast('Brak danych'); return; }
+  const reg=getRegistrySheet();
+  if(!reg||!reg.rows.length){ toast('Rejestr pusty — najpierw Scal → Rejestr'); return; }
+
+  const keyCi=pickKeyColumnInteractive(sh);
+  if(keyCi<0){ toast('Anulowano — potrzebny klucz'); return; }
+
+  pushUndo();
+  if(sh.name===REG_SHEET){
+    refreshRegistryDerived(sh);
+    render();
+    toast('Odświeżono stany w Rejestrze');
+    return;
+  }
+
+  const stanCi=ensureCol(sh,'Stan',120);
+  const kompCi=ensureCol(sh,'Komplet',110);
+  if(stanCi<0){ toast('Brak miejsca na kolumny (limit A–Z)'); return; }
+
+  const byPesel=registryIndexByPesel(reg);
+  const rmap=registryColMap(reg);
+  const counts={todo:0, partial:0, overdue:0, ok:0, today:0, unknown:0};
+
+  sh.rows.forEach((row,ri)=>{
+    const key=normPesel(row[keyCi]);
+    const dest=key?byPesel.get(key):null;
+    if(dest==null){
+      row[stanCi]=REG_STATUS.todo;
+      if(kompCi>=0) row[kompCi]='';
+      sh.rowColors[ri]='yellow';
+      counts.todo++; counts.unknown++;
+      return;
+    }
+    const dates=REG_SYSTEMS.map(n=>{ const ci=rmap[n]; return ci!=null?(reg.rows[dest][ci]||''):''; });
+    const {stan,komplet}=computePersonStatus(dates);
+    row[stanCi]=stan;
+    if(kompCi>=0) row[kompCi]=komplet;
+    const color=REG_STATUS_COLOR[stan];
+    if(color) sh.rowColors[ri]=color; else delete sh.rowColors[ri];
+    if(stan===REG_STATUS.todo) counts.todo++;
+    else if(stan===REG_STATUS.partial) counts.partial++;
+    else if(stan===REG_STATUS.overdue) counts.overdue++;
+    else if(stan===REG_STATUS.today) counts.today++;
+    else counts.ok++;
+  });
+
+  fitColumnWidths(sh,{wrap:true});
+  render();
+  const due=counts.todo+counts.partial+counts.overdue;
+  toast('Do zrobienia '+due+' · OK/Dziś '+(counts.ok+counts.today)+' · poza Rejestrem: '+counts.unknown);
+}
+function markCompleteToday(){
+  const sh=active();
+  if(!sh) return;
+  let reg=sh.name===REG_SHEET ? sh : getRegistrySheet();
+  if(!reg){ toast('Najpierw: Otwórz Rejestr'); return; }
+
+  pushUndo();
+  const today=todayISO();
+  let n=0;
+
+  if(sh.name===REG_SHEET){
+    const idxs=sh.selected.size?[...sh.selected]: (App.activeCell?[App.activeCell.r]:[]);
+    if(!idxs.length){ toast('Zaznacz wiersze w Rejestrze'); return; }
+    const map=registryColMap(sh);
+    idxs.forEach(ri=>{
+      REG_SYSTEMS.forEach(name=>{ const ci=map[name]; if(ci!=null) sh.rows[ri][ci]=today; });
+      n++;
+    });
+    refreshRegistryDerived(sh);
+  }else{
+    const keyCi=pickKeyColumnInteractive(sh);
+    if(keyCi<0){ toast('Anulowano'); return; }
+    const idxs=sh.selected.size?[...sh.selected]: (App.activeCell?[App.activeCell.r]:[]);
+    if(!idxs.length){ toast('Zaznacz osoby do kompletu'); return; }
+    reg=ensureRegistrySheet(false);
+    const rmap=registryColMap(reg);
+    let byPesel=registryIndexByPesel(reg);
+    const pci=rmap['PESEL'];
+    idxs.forEach(ri=>{
+      const key=normPesel(sh.rows[ri][keyCi]);
+      if(!key) return;
+      let dest=byPesel.get(key);
+      if(dest==null){
+        const row=Array.from({length:reg.columns.length},()=>'');
+        row[pci]=key;
+        dest=reg.rows.length;
+        reg.rows.push(row);
+        byPesel.set(key, dest);
+      }
+      REG_SYSTEMS.forEach(name=>{ const ci=rmap[name]; if(ci!=null) reg.rows[dest][ci]=today; });
+      n++;
+    });
+    refreshRegistryDerived(reg);
+    const stanCi=sh.columns.indexOf('Stan');
+    if(stanCi>=0){
+      byPesel=registryIndexByPesel(reg);
+      idxs.forEach(ri=>{
+        const key=normPesel(sh.rows[ri][keyCi]);
+        const dest=byPesel.get(key);
+        if(dest==null) return;
+        const dates=REG_SYSTEMS.map(name=>reg.rows[dest][rmap[name]]||'');
+        const {stan,komplet}=computePersonStatus(dates);
+        sh.rows[ri][stanCi]=stan;
+        const kci=sh.columns.indexOf('Komplet');
+        if(kci>=0) sh.rows[ri][kci]=komplet;
+        sh.rowColors[ri]=REG_STATUS_COLOR[stan]||'blue';
+      });
+    }
+  }
+  render();
+  toast('Komplet dziś: '+n+' · cykl '+REG_CYCLE_DAYS+' dni');
+}
+function openRegistrySheet(){
+  const reg=ensureRegistrySheet(true);
+  refreshRegistryDerived(reg);
+  setRibbonTab('rejestr');
+  render();
+  toast(reg.rows.length?'Rejestr: '+reg.rows.length+' osób':'Rejestr gotowy — Scal listę po PESEL');
+}
+function filterByStan(modes){
+  const sh=active(); if(!sh) return;
+  const stanCi=sh.columns.indexOf('Stan');
+  if(stanCi<0){ toast('Najpierw Wzbogać z Rejestru (kolumna Stan)'); setRibbonTab('rejestr'); return; }
+  pushUndo();
+  if(!modes||!modes.length){ delete sh.colFilters[stanCi]; render(); toast('Wyczyszczono filtr stanu'); return; }
+  sh.colFilters[stanCi]={mode:'in_list', values:modes.slice()};
+  render();
+  toast('Filtr: '+modes.join(' / '));
+}
+
 function fillSheetPickMenu(menu, move){
   menu.innerHTML='';
   const sh=active();
@@ -2413,7 +2768,7 @@ function serializeSheet(sh){
 }
 function saveWorkbook(){
   const data={
-    version:7.2, app:'OfflineTableStudio',
+    version:7.5, app:'OfflineTableStudio',
     workbook:App.workbook, wrap:App.wrap, center:App.center, plain:App.plain, theme:App.theme, dark:App.dark,
     copyMode:App.copyMode, statuses:App.statuses,
     activeId:App.activeId, activeSchema:App.activeSchema,
@@ -2751,6 +3106,15 @@ $('btnGoto').onclick=()=>{
   scrollActiveIntoView();
 };
 $('btnUndo').onclick=applyUndo; $('btnRules').onclick=openRulesDlg; $('btnCompare').onclick=openCompareDlg; $('btnDedup').onclick=openDedupDlg; $('btnGroup').onclick=openGroupDlg;
+$('btnRegOpen').onclick=openRegistrySheet;
+$('btnRegMerge').onclick=mergeActiveIntoRegistry;
+$('btnRegEnrich').onclick=enrichActiveFromRegistry;
+$('btnRegComplete').onclick=markCompleteToday;
+$('btnRegFilterTodo').onclick=()=>filterByStan([REG_STATUS.todo, REG_STATUS.partial, REG_STATUS.overdue]);
+$('btnRegFilterPartial').onclick=()=>filterByStan([REG_STATUS.partial]);
+$('btnRegFilterOver').onclick=()=>filterByStan([REG_STATUS.overdue]);
+$('btnRegFilterOk').onclick=()=>filterByStan([REG_STATUS.ok, REG_STATUS.today]);
+$('btnRegFilterClear').onclick=()=>filterByStan([]);
 $('btnArchive').onclick=markHandledToArchive;
 $('btnHide').onclick=hideSelectedRows;
 $('btnUnhide').onclick=showHiddenRows;
