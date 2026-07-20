@@ -1471,6 +1471,7 @@ function passColFilter(val, f){
   if(f.mode==='notempty') return v!=='';
   if(f.mode==='equals') return v.toLowerCase()===String(f.text||'').toLowerCase();
   if(f.mode==='contains') return !f.text || v.toLowerCase().includes(String(f.text).toLowerCase());
+  if(f.mode==='not_contains') return !f.text || !v.toLowerCase().includes(String(f.text).toLowerCase());
   if(f.mode==='starts') return !f.text || v.toLowerCase().startsWith(String(f.text).toLowerCase());
   if(f.mode==='range'){
     const num=toNum(v); if(num==null) return false;
@@ -1513,6 +1514,7 @@ function filterLabel(sh, ci, f){
   }
   if(f.mode==='equals') return name+': = „'+f.text+'”';
   if(f.mode==='contains') return name+': zawiera „'+f.text+'”';
+  if(f.mode==='not_contains') return name+': nie zawiera „'+f.text+'”';
   if(f.mode==='starts') return name+': zaczyna „'+f.text+'”';
   if(f.mode==='empty') return name+': puste';
   if(f.mode==='notempty') return name+': niepuste';
@@ -1522,7 +1524,7 @@ function filterLabel(sh, ci, f){
 function hasActiveFilter(f){
   if(!f||!f.mode||f.mode==='any') return false;
   if(f.mode==='in_list') return Array.isArray(f.values);
-  if(f.mode==='contains'||f.mode==='starts'||f.mode==='equals') return String(f.text||'')!=='';
+  if(f.mode==='contains'||f.mode==='not_contains'||f.mode==='starts'||f.mode==='equals') return String(f.text||'')!=='';
   if(f.mode==='range') return String(f.min??'')!==''||String(f.max??'')!=='';
   return true;
 }
@@ -1999,7 +2001,8 @@ function openColFilter(ci, anchor){
     <div class="cf-box" id="cfCheckboxes"></div>
     <div class="cf-sep"></div>
     <div class="cf-sub">Tekst</div>
-    <div class="row"><input id="cfText" placeholder="Zawiera…" value=""></div>
+    <div class="row"><input id="cfText" placeholder="np. 1540…" value=""></div>
+    <label class="chk" style="display:flex;gap:8px;align-items:center;font-size:.78rem;margin:0 0 8px"><input type="checkbox" id="cfNotContains"> Nie zawiera (np. bez rachunku 1540)</label>
     <div class="cf-sub">Liczba</div>
     <div class="row"><div style="display:flex;gap:6px"><input id="cfMin" placeholder="Od"><input id="cfMax" placeholder="Do"></div></div>
     <div class="cf-links" style="margin-top:8px">
@@ -2011,7 +2014,8 @@ function openColFilter(ci, anchor){
       <button class="btn primary sm" id="cfApply" type="button" style="color:#fff">OK</button>
     </div>`;
 
-  pop.querySelector('#cfText').value=(f.mode==='contains'||f.mode==='starts'||f.mode==='equals')?(f.text||''):'';
+  pop.querySelector('#cfText').value=(f.mode==='contains'||f.mode==='not_contains'||f.mode==='starts'||f.mode==='equals')?(f.text||''):'';
+  pop.querySelector('#cfNotContains').checked=(f.mode==='not_contains');
   pop.querySelector('#cfMin').value=f.mode==='range'?(f.min||''):'';
   pop.querySelector('#cfMax').value=f.mode==='range'?(f.max||''):'';
 
@@ -2052,7 +2056,8 @@ function openColFilter(ci, anchor){
     const min=pop.querySelector('#cfMin').value.trim();
     const max=pop.querySelector('#cfMax').value.trim();
     if(text){
-      sh.colFilters[ci]={mode:'contains', text, min:'', max:''};
+      const not=!!pop.querySelector('#cfNotContains').checked;
+      sh.colFilters[ci]={mode:not?'not_contains':'contains', text, min:'', max:''};
     }else if(min!==''||max!==''){
       sh.colFilters[ci]={mode:'range', text:'', min, max};
     }else{
@@ -2315,12 +2320,13 @@ function openCompareDlg(){
   const dlg=$('compareDlg'), bd=$('backdrop');
   const sheetOpts=App.sheets.map(s=>`<option value="${s.id}">${s.name.replace(/</g,'&lt;')} (${s.rows.length})</option>`).join('');
   dlg.innerHTML=`<h3>Porównaj karty</h3>
-    <p class="hint">Trzy tryby: wspólne (∩), tylko w A (A−B), tylko w B (B−A). Wynik = pełne wiersze z wybranej strony.</p>
+    <p class="hint">Trzy tryby: wspólne (∩), tylko w A (A−B), tylko w B (B−A). Wynik = nowa karta (3) z pełnymi wierszami.</p>
     <div class="row"><label>Tryb</label><select id="cmpMode">
-      <option value="intersect">Wspólne (A ∩ B)</option>
+      <option value="intersect">Wspólne PESEL (A ∩ B) → karta 3</option>
       <option value="onlyA">Tylko w A (A − B)</option>
       <option value="onlyB">Tylko w B (B − A)</option>
     </select></div>
+    <label class="chk" style="display:flex;gap:8px;align-items:center;font-size:.82rem;margin:0 0 10px"><input type="checkbox" id="cmpVisible" checked> Tylko widoczne wiersze (po filtrach) — np. bez rachunku 1540</label>
     <div class="row"><label>Karta A</label><select id="cmpSheetA">${sheetOpts}</select></div>
     <div class="row"><label>Kolumna klucza w A</label><select id="cmpColA"></select></div>
     <div class="row"><label>Karta B</label><select id="cmpSheetB">${sheetOpts}</select></div>
@@ -2360,25 +2366,30 @@ function openCompareDlg(){
     }
     refreshPreview();
   };
+  const rowIdxs=(sh)=>{
+    const onlyVis=!!dlg.querySelector('#cmpVisible').checked;
+    return onlyVis ? filtered(sh) : sh.rows.map((_,i)=>i);
+  };
   const countCompare=(a,b,ca,cb,m)=>{
+    const ia=rowIdxs(a), ib=rowIdxs(b);
     const keysA=new Set(), keysB=new Set();
-    a.rows.forEach(r=>{ const k=normKey(r[ca]); if(k) keysA.add(k); });
-    b.rows.forEach(r=>{ const k=normKey(r[cb]); if(k) keysB.add(k); });
+    ia.forEach(i=>{ const k=normKey(a.rows[i][ca]); if(k) keysA.add(k); });
+    ib.forEach(i=>{ const k=normKey(b.rows[i][cb]); if(k) keysB.add(k); });
     let hits=0, empty=0;
     if(m==='onlyB'){
-      b.rows.forEach(r=>{
-        const k=normKey(r[cb]);
+      ib.forEach(i=>{
+        const k=normKey(b.rows[i][cb]);
         if(!k){ empty++; return; }
         if(!keysA.has(k)) hits++;
       });
     }else{
-      a.rows.forEach(r=>{
-        const k=normKey(r[ca]);
+      ia.forEach(i=>{
+        const k=normKey(a.rows[i][ca]);
         if(!k){ empty++; return; }
         if(m==='intersect' ? keysB.has(k) : !keysB.has(k)) hits++;
       });
     }
-    return {hits, empty, keysA:keysA.size, keysB:keysB.size};
+    return {hits, empty, keysA:keysA.size, keysB:keysB.size, vis:!!dlg.querySelector('#cmpVisible').checked};
   };
   const refreshPreview=()=>{
     const a=sheetA(), b=sheetB();
@@ -2387,9 +2398,9 @@ function openCompareDlg(){
     const m=mode();
     if(!a||!b||a.id===b.id){ el.textContent='Podgląd: wybierz dwie różne karty'; return; }
     if(ca<0||cb<0||!a.columns.length||!b.columns.length){ el.textContent='Podgląd: brak kolumn'; return; }
-    const {hits,empty}=countCompare(a,b,ca,cb,m);
+    const {hits,empty,vis}=countCompare(a,b,ca,cb,m);
     const label=m==='intersect'?'wspólnych':(m==='onlyA'?'tylko w A':'tylko w B');
-    el.textContent='Podgląd: '+hits+' wierszy '+label+(empty?' · pominięto puste: '+empty:'');
+    el.textContent='Podgląd: '+hits+' wierszy '+label+(vis?' (po filtrach)':' (całe karty)')+(empty?' · pominięto puste: '+empty:'');
   };
 
   const act=active();
@@ -2401,6 +2412,7 @@ function openCompareDlg(){
   dlg.querySelector('#cmpSheetA').onchange=refreshCols;
   dlg.querySelector('#cmpSheetB').onchange=refreshCols;
   dlg.querySelector('#cmpMode').onchange=refreshPreview;
+  dlg.querySelector('#cmpVisible').onchange=refreshPreview;
   dlg.querySelector('#cmpColA').onchange=()=>{
     const a=sheetA(), b=sheetB();
     const aName=a?norm(a.columns[+dlg.querySelector('#cmpColA').value]).toLowerCase():'';
@@ -2418,14 +2430,15 @@ function openCompareDlg(){
     const m=mode();
     if(!a||!b||a.id===b.id){ toast('Wybierz dwie różne karty'); return; }
     if(!a.columns.length||!b.columns.length){ toast('Obie karty muszą mieć kolumny'); return; }
+    const ia=rowIdxs(a), ib=rowIdxs(b);
     const keysA=new Set(), keysB=new Set();
-    a.rows.forEach(r=>{ const k=normKey(r[ca]); if(k) keysA.add(k); });
-    b.rows.forEach(r=>{ const k=normKey(r[cb]); if(k) keysB.add(k); });
-    let src=a, keyCi=ca, matchIdx=[], otherKeys=keysB, keep=(k)=>keysB.has(k);
+    ia.forEach(i=>{ const k=normKey(a.rows[i][ca]); if(k) keysA.add(k); });
+    ib.forEach(i=>{ const k=normKey(b.rows[i][cb]); if(k) keysB.add(k); });
+    let src=a, keyCi=ca, matchIdx=[], srcIdxs=ia, keep=(k)=>keysB.has(k);
     let sheetName='Wspólne', op='∩';
     if(m==='onlyA'){ keep=(k)=>!keysB.has(k); sheetName='Tylko '+a.name; op='−'; }
-    if(m==='onlyB'){ src=b; keyCi=cb; otherKeys=keysA; keep=(k)=>!keysA.has(k); sheetName='Tylko '+b.name; op='−'; }
-    src.rows.forEach((r,i)=>{ const k=normKey(r[keyCi]); if(k && keep(k)) matchIdx.push(i); });
+    if(m==='onlyB'){ src=b; keyCi=cb; srcIdxs=ib; keep=(k)=>!keysA.has(k); sheetName='Tylko '+b.name; op='−'; }
+    srcIdxs.forEach(i=>{ const k=normKey(src.rows[i][keyCi]); if(k && keep(k)) matchIdx.push(i); });
     if(!matchIdx.length){ toast('Brak wierszy dla wybranego trybu'); return; }
     const seed={
       columns:src.columns.slice(),
