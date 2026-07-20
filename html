@@ -421,19 +421,28 @@ function measureTextWidth(text, font){
   c.font=font||'14px "Segoe UI",system-ui,sans-serif';
   return c.measureText(String(text??'')).width;
 }
-function autoFitColumns(){
-  const sh=active(); if(!sh||!sh.columns.length){ toast('Brak kolumn'); return; }
-  pushUndo();
-  const cols=visCols(sh); const idxs=sorted(sh, filtered(sh));
+function fitColumnWidths(sh, opts){
+  opts=opts||{};
+  if(!sh||!sh.columns.length) return false;
+  const cols=visCols(sh);
+  const idxs=sorted(sh, filtered(sh));
   const headFont='650 13px "Segoe UI",system-ui,sans-serif';
   const cellFont='14px "Segoe UI",system-ui,sans-serif';
+  const maxW=opts.maxWidth||520;
+  const minW=opts.minWidth||72;
   cols.forEach(ci=>{
     let max=measureTextWidth(sh.columns[ci], headFont)+56;
     const sample=idxs.length>800?idxs.filter((_,i)=>i%Math.ceil(idxs.length/800)===0):idxs;
     sample.forEach(ri=>{ max=Math.max(max, measureTextWidth(sh.rows[ri][ci], cellFont)+28); });
-    sh.widths[ci]=Math.min(480, Math.max(72, Math.ceil(max)));
+    sh.widths[ci]=Math.min(maxW, Math.max(minW, Math.ceil(max)));
   });
-  App.wrap=true;
+  if(opts.wrap!==false) App.wrap=true;
+  return true;
+}
+function autoFitColumns(){
+  const sh=active(); if(!sh||!sh.columns.length){ toast('Brak kolumn'); return; }
+  pushUndo();
+  fitColumnWidths(sh, {wrap:true});
   render();
   toast('Autodopasowano kolumny (+ zawijanie)');
 }
@@ -1092,10 +1101,17 @@ function loadMatrix(matrix, append){
     msg+=' · stopka Suma: z PDF';
   }
   extractPpeTable._meta=null;
-  toast(msg);
   setRibbonTab('edycja');
-  if(App.activeSchema){ const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?'); if(ok) applySchemaByName(App.activeSchema,false); else render(); }
-  else render();
+  let fitted=false;
+  if(App.activeSchema){
+    const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?');
+    if(ok) applySchemaByName(App.activeSchema,false);
+    else { fitColumnWidths(sh,{wrap:true}); fitted=true; render(); }
+  }else{
+    fitColumnWidths(sh,{wrap:true}); fitted=true; render();
+  }
+  if(fitted) msg+=' · kolumny dopasowane';
+  toast(msg);
 }
 
 function filterKey(v){
@@ -2556,7 +2572,9 @@ function pasteMatrixAt(matrix, startR, startC){
       sh.rows[ri][ci]=val==null?'':String(val);
     });
   });
-  applyColorRules(sh); render();
+  applyColorRules(sh);
+  fitColumnWidths(sh,{wrap:true});
+  render();
   if(matrix.length){
     const er=startR+matrix.length-1;
     const ec=startC+Math.max(...matrix.map(r=>r.length))-1;
@@ -2565,7 +2583,7 @@ function pasteMatrixAt(matrix, startR, startC){
     App.anchorCell={r:startR,c:startC};
     renderGrid();
   }
-  toast('Wklejono '+matrix.length+'×'+(matrix[0]?.length||0)+' od '+letter(sh.order.indexOf(startC))+(startR+1));
+  toast('Wklejono '+matrix.length+'×'+(matrix[0]?.length||0)+' od '+letter(sh.order.indexOf(startC))+(startR+1)+' · kolumny dopasowane');
   return true;
 }
 async function readClipboardMatrix(){
