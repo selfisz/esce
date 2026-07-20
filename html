@@ -166,6 +166,13 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .menu.open{display:block}.menu button,.menu .mi{width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font:inherit;cursor:pointer;display:block}
 .menu button:hover{background:var(--panel2)}.menu .sep{height:1px;background:var(--line);margin:4px 0}
 .popup,.dlg{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px;min-width:260px;color:var(--text)}
+#colFilterPopup{min-width:300px;width:min(340px,92vw);max-height:min(520px,85vh);overflow:auto}
+#colFilterPopup .cf-links{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px;font-size:.75rem}
+#colFilterPopup .cf-links a{color:var(--accent);text-decoration:none;cursor:pointer}
+#colFilterPopup .cf-links a:hover{text-decoration:underline}
+#colFilterPopup .cf-box{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--panel2);font-size:.8rem;display:flex;flex-direction:column;gap:3px}
+#colFilterPopup .cf-sep{height:1px;background:var(--line);margin:10px 0}
+#colFilterPopup .cf-sub{font-size:.72rem;color:var(--muted);margin:0 0 4px;font-weight:650}
 .dlg{left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,92vw);max-height:80vh;overflow:auto}
 .dlg h3{margin:0 0 10px;font-size:1rem}.dlg .row{display:grid;gap:6px;margin-bottom:10px}.dlg .row label{font-size:.75rem;color:var(--muted)}
 .dlg textarea{width:100%;min-height:160px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;font-size:.82rem;font-family:var(--mono);background:var(--panel2);color:var(--text);box-sizing:border-box}
@@ -256,8 +263,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       </div>
       <button class="btn sm" id="btnCopy" type="button" title="Kopiuj zaznaczone">Kopiuj</button>
       <span class="sep"></span>
-      <button class="btn sm" id="btnToNew" type="button">→ nowa karta</button>
-      <div class="menu-wrap"><button class="btn sm" id="btnToExisting" type="button">→ karta ▾</button><div class="menu" id="sheetPickMenu"></div></div>
+      <button class="btn sm" id="btnToNew" type="button" title="Kopiuj zaznaczone do nowej karty (zostajesz tutaj)">→ nowa</button>
+      <button class="btn sm" id="btnMoveToNew" type="button" title="Przenieś zaznaczone do nowej karty i usuń z bieżącej">Przenieś → nowa</button>
+      <div class="menu-wrap"><button class="btn sm" id="btnToExisting" type="button" title="Kopiuj do istniejącej karty">→ karta ▾</button><div class="menu" id="sheetPickMenu"></div></div>
+      <div class="menu-wrap"><button class="btn sm" id="btnMoveToExisting" type="button" title="Przenieś do istniejącej karty i usuń z bieżącej">Przenieś ▾</button><div class="menu" id="sheetMoveMenu"></div></div>
       <span class="sep"></span>
       <button class="btn sm" id="btnArchive" type="button" title="Oznacz jako obsłużone i przenieś do Archiwum">Obsłużone → Archiwum</button>
       <button class="btn sm" id="btnHide" type="button">Ukryj</button>
@@ -267,6 +276,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
     <div class="ribbon" id="ribbon-narzedzia" data-panel="narzedzia" role="tabpanel">
       <div class="menu-wrap"><button class="btn sm" id="btnSchemas" type="button">Schematy ▾</button><div class="menu" id="schemaMenu"></div></div>
       <button class="btn sm" id="btnRules" type="button">Reguły kolorów</button>
+      <button class="btn sm" id="btnCompare" type="button" title="Przecięcie wierszy po wspólnej kolumnie (np. PESEL)">Porównaj karty</button>
       <button class="btn sm" id="btnDedup" type="button">Deduplikacja</button>
       <button class="btn sm" id="btnGroup" type="button">Grupuj</button>
     </div>
@@ -295,7 +305,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
   </div>
   <div class="chipbar" id="chipbar"><span class="chip muted">Brak aktywnych filtrów / schematu</span></div>
   <div class="toolbar">
-    <div class="field" style="flex:1;max-width:340px"><input id="filterInput" type="search" placeholder="Filtr globalny…" autocomplete="off"></div>
+    <div class="field" style="flex:1;max-width:340px"><input id="filterInput" type="search" placeholder="Szukaj w całym wierszu…" autocomplete="off" title="Filtr globalny: pokazuje wiersze, w których którakolwiek komórka zawiera wpisany tekst"></div>
     <div class="field" style="min-width:150px"><input id="gotoInput" type="number" min="1" placeholder="Idź do wiersza"><button class="btn light sm" id="btnGoto" type="button">Idź</button></div>
     <button class="btn light sm" id="btnClearFilters" type="button">Wyczyść filtry</button>
     <button class="btn light sm danger" id="btnClearSheet" type="button">Wyczyść kartę</button>
@@ -343,6 +353,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 <div class="dlg hidden" id="rulesDlg"></div>
 <div class="dlg hidden" id="dedupDlg"></div>
 <div class="dlg hidden" id="groupDlg"></div>
+<div class="dlg hidden" id="compareDlg"></div>
 <div class="dlg hidden" id="schemaDlg"></div>
 <div class="dlg hidden" id="pastePdfDlg"></div>
 <div class="dlg hidden" id="findDlg"></div>
@@ -1087,12 +1098,19 @@ function loadMatrix(matrix, append){
   else render();
 }
 
+function filterKey(v){
+  const s=norm(v);
+  if(s==='') return 's:';
+  const n=toNum(s);
+  if(n!=null) return 'n:'+n;
+  return 's:'+s.toLowerCase();
+}
 function passColFilter(val, f){
   if(!f||f.mode==='any'||!f.mode) return true;
   const v=norm(val);
   if(f.mode==='empty') return v==='';
   if(f.mode==='notempty') return v!=='';
-  if(f.mode==='equals') return v.toLowerCase()===String(f.text).toLowerCase();
+  if(f.mode==='equals') return v.toLowerCase()===String(f.text||'').toLowerCase();
   if(f.mode==='contains') return !f.text || v.toLowerCase().includes(String(f.text).toLowerCase());
   if(f.mode==='starts') return !f.text || v.toLowerCase().startsWith(String(f.text).toLowerCase());
   if(f.mode==='range'){
@@ -1102,7 +1120,9 @@ function passColFilter(val, f){
     return true;
   }
   if(f.mode==='in_list'){
-    return f.values && f.values.includes(v);
+    if(!f.values||!f.values.length) return false;
+    const want=f._keySet||(f._keySet=new Set(f.values.map(filterKey)));
+    return want.has(filterKey(val));
   }
   return true;
 }
@@ -1127,16 +1147,26 @@ function sorted(sh, idxs){
 }
 function filterLabel(sh, ci, f){
   const name=sh.columns[ci]||('Kol '+ci);
-  if(f.mode==='in_list') return name+': wybrane ('+(f.values?f.values.length:0)+')';
+  if(f.mode==='in_list'){
+    const n=f.values?f.values.length:0;
+    if(n===1) return name+': „'+(f.values[0]===''?'(puste)':f.values[0])+'”';
+    return name+': '+n+' wartości';
+  }
   if(f.mode==='equals') return name+': = „'+f.text+'”';
   if(f.mode==='contains') return name+': zawiera „'+f.text+'”';
   if(f.mode==='starts') return name+': zaczyna „'+f.text+'”';
   if(f.mode==='empty') return name+': puste';
   if(f.mode==='notempty') return name+': niepuste';
-  if(f.mode==='range') return name+': '+(f.min!==''?f.min:'…')+' – '+(f.max!==''?f.max:'…');
+  if(f.mode==='range') return name+': '+(f.min!==''&&f.min!=null?f.min:'…')+' – '+(f.max!==''&&f.max!=null?f.max:'…');
   return name;
 }
-function hasActiveFilter(f){return f&&f.mode&&f.mode!=='any';}
+function hasActiveFilter(f){
+  if(!f||!f.mode||f.mode==='any') return false;
+  if(f.mode==='in_list') return Array.isArray(f.values);
+  if(f.mode==='contains'||f.mode==='starts'||f.mode==='equals') return String(f.text||'')!=='';
+  if(f.mode==='range') return String(f.min??'')!==''||String(f.max??'')!=='';
+  return true;
+}
 
 function applyColorRules(sh){
   sh._ruleColors={};
@@ -1516,105 +1546,131 @@ function renderSidebar(sh){
 function openColFilter(ci, anchor){
   App.filterCol=ci; const sh=active(); const f=Object.assign(emptyFilter(), sh.colFilters[ci]||{});
   const pop=$('colFilterPopup');
-  
-  // Pobieranie unikalnych, posortowanych wartości z danej kolumny
-  const uniqueVals = [...new Set(sh.rows.map(r=>norm(r[ci])))].sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));
-  // Zarządzanie stanem zaznaczeń
-  const selectedVals = new Set((!f.mode || f.mode==='any' || f.mode==='in_list') && f.values ? f.values : uniqueVals);
-  if(!f.values && f.mode && f.mode!=='any' && f.mode!=='in_list') selectedVals.clear();
 
-  pop.innerHTML=`<div style="font-weight:700;margin-bottom:8px;font-size:.85rem">${sh.columns[ci]}</div>
-    <div class="row"><label>Tryb</label><select id="cfMode">
-      <option value="in_list">Wybór z listy (Excel)</option>
-      <option value="any">Bez filtra</option>
-      <option value="contains">Tekst zawiera</option>
-      <option value="equals">Dokładnie (równa się)</option>
-      <option value="starts">Zaczyna się od</option>
-      <option value="range">Liczba od–do</option>
-      <option value="empty">Puste</option>
-      <option value="notempty">Niepuste</option>
-    </select></div>
-    
-    <div id="cfListWrap">
-      <div class="row"><input id="cfSearchList" placeholder="Szukaj na liście..." style="margin-bottom:4px"></div>
-      <div style="display:flex;gap:8px;margin-bottom:6px;font-size:.75rem">
-        <a href="#" id="cfSelAll" style="color:var(--accent);text-decoration:none">Zaznacz wszystko</a>
-        <a href="#" id="cfSelNone" style="color:var(--accent);text-decoration:none">Odznacz wszystko</a>
-      </div>
-      <div id="cfCheckboxes" style="max-height:160px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:4px;background:var(--panel2);font-size:.8rem;display:flex;flex-direction:column;gap:4px">
-      </div>
+  // Unikalne wartości z normalizacją klucza (liczby 1 234,5 ≡ 1234.5; case-insensitive)
+  const byKey=new Map();
+  sh.rows.forEach(r=>{
+    const display=norm(r[ci]);
+    const key=filterKey(r[ci]);
+    if(!byKey.has(key)) byKey.set(key, display);
+  });
+  const uniqueVals=[...byKey.values()].sort((a,b)=>{
+    if(a===''&&b!=='') return -1; if(b===''&&a!=='') return 1;
+    const an=toNum(a), bn=toNum(b);
+    if(an!=null&&bn!=null) return an-bn;
+    return a.localeCompare(b,'pl',{numeric:true,sensitivity:'base'});
+  });
+  const uniqueKeys=new Set(uniqueVals.map(filterKey));
+
+  const selectedVals=new Set();
+  if(f.mode==='in_list' && Array.isArray(f.values)){
+    const want=new Set(f.values.map(filterKey));
+    uniqueVals.forEach(v=>{ if(want.has(filterKey(v))) selectedVals.add(v); });
+  }else if(!f.mode || f.mode==='any' || !hasActiveFilter(f)){
+    uniqueVals.forEach(v=>selectedVals.add(v));
+  }else{
+    // warunek tekst/liczba/puste — lista startuje odznaczona wizualnie, warunek w polach
+    uniqueVals.forEach(v=>selectedVals.add(v));
+  }
+
+  pop.innerHTML=`<div style="font-weight:700;margin-bottom:8px;font-size:.85rem">${String(sh.columns[ci]).replace(/</g,'&lt;')}</div>
+    <div class="row"><input id="cfSearchList" placeholder="Szukaj na liście…" autocomplete="off"></div>
+    <div class="cf-links">
+      <a href="#" id="cfSelVisible">Zaznacz widoczne</a>
+      <a href="#" id="cfSelNoneVisible">Odznacz widoczne</a>
+      <a href="#" id="cfSelAll">Wszystkie</a>
+      <a href="#" id="cfSelNone">Żadne</a>
     </div>
+    <div class="cf-box" id="cfCheckboxes"></div>
+    <div class="cf-sep"></div>
+    <div class="cf-sub">Tekst</div>
+    <div class="row"><input id="cfText" placeholder="Zawiera…" value=""></div>
+    <div class="cf-sub">Liczba</div>
+    <div class="row"><div style="display:flex;gap:6px"><input id="cfMin" placeholder="Od"><input id="cfMax" placeholder="Do"></div></div>
+    <div class="cf-links" style="margin-top:8px">
+      <a href="#" id="cfEmpty">Tylko puste</a>
+      <a href="#" id="cfNotEmpty">Tylko niepuste</a>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn light sm" id="cfClear" type="button">Wyczyść</button>
+      <button class="btn primary sm" id="cfApply" type="button" style="color:#fff">OK</button>
+    </div>`;
 
-    <div class="row" id="cfTextRow"><label>Wartość</label><input id="cfText" placeholder="np. Kowalski"></div>
-    <div class="row" id="cfRangeRow"><label>Od / Do</label><div style="display:flex;gap:6px"><input id="cfMin" placeholder="Od"><input id="cfMax" placeholder="Do"></div></div>
-    
-    <div class="actions" style="margin-top:12px"><button class="btn light sm" id="cfClear" type="button">Wyczyść</button><button class="btn primary sm" id="cfApply" type="button" style="color:#fff">Zastosuj</button></div>`;
-  
-  pop.querySelector('#cfMode').value=f.mode||'in_list';
-  pop.querySelector('#cfText').value=f.text||''; pop.querySelector('#cfMin').value=f.min||''; pop.querySelector('#cfMax').value=f.max||'';
-  
-  const cbBox = pop.querySelector('#cfCheckboxes');
-  const renderList = (search) => {
-    const q = (search||'').toLowerCase();
-    const filtered = uniqueVals.filter(v => v.toLowerCase().includes(q));
-    cbBox.innerHTML = '';
-    filtered.forEach((v) => {
-      const lbl = document.createElement('label');
-      lbl.style.cssText = 'display:flex;gap:6px;align-items:center;cursor:pointer;';
-      const cb = document.createElement('input'); cb.type='checkbox'; cb.className='cf-cb';
-      cb.checked = selectedVals.has(v);
-      cb.onchange = () => { if(cb.checked) selectedVals.add(v); else selectedVals.delete(v); };
-      const sp = document.createElement('span');
-      if(v==='') { sp.innerHTML = '<em style="opacity:.5">(puste)</em>'; } else { sp.textContent = v; }
+  pop.querySelector('#cfText').value=(f.mode==='contains'||f.mode==='starts'||f.mode==='equals')?(f.text||''):'';
+  pop.querySelector('#cfMin').value=f.mode==='range'?(f.min||''):'';
+  pop.querySelector('#cfMax').value=f.mode==='range'?(f.max||''):'';
+
+  const cbBox=pop.querySelector('#cfCheckboxes');
+  let visibleVals=[];
+  const renderList=(search)=>{
+    const q=(search||'').toLowerCase();
+    visibleVals=uniqueVals.filter(v=>{
+      if(!q) return true;
+      if(v==='') return '(puste)'.includes(q) || q==='';
+      return v.toLowerCase().includes(q);
+    });
+    cbBox.innerHTML='';
+    visibleVals.forEach(v=>{
+      const lbl=document.createElement('label');
+      lbl.style.cssText='display:flex;gap:6px;align-items:center;cursor:pointer;padding:2px 2px';
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.className='cf-cb';
+      cb.checked=selectedVals.has(v);
+      cb.onchange=()=>{ if(cb.checked) selectedVals.add(v); else selectedVals.delete(v); };
+      const sp=document.createElement('span');
+      if(v==='') sp.innerHTML='<em style="opacity:.55">(puste)</em>'; else sp.textContent=v;
       lbl.append(cb, sp); cbBox.append(lbl);
     });
-    if(!filtered.length) cbBox.innerHTML = '<div style="color:var(--muted);padding:4px">Brak wyników</div>';
+    if(!visibleVals.length) cbBox.innerHTML='<div style="color:var(--muted);padding:6px">Brak na liście</div>';
   };
   renderList();
-  
-  pop.querySelector('#cfSearchList').oninput = (e) => renderList(e.target.value);
-  pop.querySelector('#cfSelAll').onclick = (e) => { e.preventDefault(); uniqueVals.forEach(v=>selectedVals.add(v)); renderList(pop.querySelector('#cfSearchList').value); };
-  pop.querySelector('#cfSelNone').onclick = (e) => { e.preventDefault(); selectedVals.clear(); renderList(pop.querySelector('#cfSearchList').value); };
 
-  const sync=()=>{
-    const m=pop.querySelector('#cfMode').value;
-    pop.querySelector('#cfListWrap').style.display=(m==='in_list')?'block':'none';
-    pop.querySelector('#cfTextRow').style.display=(m==='contains'||m==='starts'||m==='equals')?'grid':'none';
-    pop.querySelector('#cfRangeRow').style.display=m==='range'?'grid':'none';
-  };
-  sync(); pop.querySelector('#cfMode').onchange=sync;
-  
-  const r=anchor.getBoundingClientRect(); pop.classList.remove('hidden');
-  pop.style.left=Math.min(window.innerWidth-320, Math.max(8,r.left))+'px'; pop.style.top=Math.min(window.innerHeight-380, r.bottom+6)+'px';
-  
-  const applyFilter = () => {
+  pop.querySelector('#cfSearchList').oninput=e=>renderList(e.target.value);
+  pop.querySelector('#cfSelVisible').onclick=e=>{ e.preventDefault(); visibleVals.forEach(v=>selectedVals.add(v)); renderList(pop.querySelector('#cfSearchList').value); };
+  pop.querySelector('#cfSelNoneVisible').onclick=e=>{ e.preventDefault(); visibleVals.forEach(v=>selectedVals.delete(v)); renderList(pop.querySelector('#cfSearchList').value); };
+  pop.querySelector('#cfSelAll').onclick=e=>{ e.preventDefault(); uniqueVals.forEach(v=>selectedVals.add(v)); renderList(pop.querySelector('#cfSearchList').value); };
+  pop.querySelector('#cfSelNone').onclick=e=>{ e.preventDefault(); selectedVals.clear(); renderList(pop.querySelector('#cfSearchList').value); };
+
+  const close=()=>{ pop.classList.add('hidden'); };
+  const applyFilter=()=>{
     pushUndo();
-    const mode=pop.querySelector('#cfMode').value;
-    if(mode==='any') {
-      delete sh.colFilters[ci];
-    } else if (mode==='in_list') {
-      if(selectedVals.size === uniqueVals.length) delete sh.colFilters[ci];
-      else sh.colFilters[ci]={ mode: 'in_list', values: [...selectedVals] };
-    } else {
-      sh.colFilters[ci]={mode, text:pop.querySelector('#cfText').value, min:pop.querySelector('#cfMin').value, max:pop.querySelector('#cfMax').value};
+    const text=pop.querySelector('#cfText').value.trim();
+    const min=pop.querySelector('#cfMin').value.trim();
+    const max=pop.querySelector('#cfMax').value.trim();
+    if(text){
+      sh.colFilters[ci]={mode:'contains', text, min:'', max:''};
+    }else if(min!==''||max!==''){
+      sh.colFilters[ci]={mode:'range', text:'', min, max};
+    }else{
+      // lista wartości
+      const selectedKeys=new Set([...selectedVals].map(filterKey));
+      const allOn=[...uniqueKeys].every(k=>selectedKeys.has(k)) && selectedKeys.size===uniqueKeys.size;
+      if(allOn) delete sh.colFilters[ci];
+      else sh.colFilters[ci]={mode:'in_list', values:[...selectedVals]};
     }
-    pop.classList.add('hidden'); render();
+    close(); render();
+  };
+  const applyMode=(mode)=>{
+    pushUndo();
+    sh.colFilters[ci]={mode, text:'', min:'', max:''};
+    close(); render();
   };
 
   pop.querySelector('#cfApply').onclick=applyFilter;
-  pop.querySelector('#cfClear').onclick=()=>{pushUndo(); delete sh.colFilters[ci]; pop.classList.add('hidden'); render();};
-  
-  const handleEnter = (e) => { if(e.key === 'Enter') applyFilter(); };
-  pop.querySelector('#cfText').onkeydown = handleEnter;
-  pop.querySelector('#cfMin').onkeydown = handleEnter;
-  pop.querySelector('#cfMax').onkeydown = handleEnter;
-  pop.querySelector('#cfSearchList').onkeydown = handleEnter;
-  
-  setTimeout(()=>{
-    if(pop.querySelector('#cfMode').value === 'in_list') pop.querySelector('#cfSearchList').focus();
-    else if(pop.querySelector('#cfMode').value === 'range') pop.querySelector('#cfMin').focus();
-    else pop.querySelector('#cfText').focus();
-  }, 50);
+  pop.querySelector('#cfClear').onclick=()=>{ pushUndo(); delete sh.colFilters[ci]; close(); render(); };
+  pop.querySelector('#cfEmpty').onclick=e=>{ e.preventDefault(); applyMode('empty'); };
+  pop.querySelector('#cfNotEmpty').onclick=e=>{ e.preventDefault(); applyMode('notempty'); };
+
+  const handleEnter=e=>{ if(e.key==='Enter'){ e.preventDefault(); applyFilter(); } };
+  pop.querySelector('#cfText').onkeydown=handleEnter;
+  pop.querySelector('#cfMin').onkeydown=handleEnter;
+  pop.querySelector('#cfMax').onkeydown=handleEnter;
+  pop.querySelector('#cfSearchList').onkeydown=handleEnter;
+
+  const r=anchor.getBoundingClientRect();
+  pop.classList.remove('hidden');
+  pop.style.left=Math.min(window.innerWidth-320, Math.max(8,r.left))+'px';
+  pop.style.top=Math.min(window.innerHeight-420, r.bottom+6)+'px';
+  setTimeout(()=>pop.querySelector('#cfSearchList').focus(), 40);
 }
 
 function selectRow(sh,ri,e){
@@ -1807,6 +1863,122 @@ function openDedupDlg(){
   };
 }
 
+function normKey(v){
+  return norm(v).replace(/\s+/g,'').toLowerCase();
+}
+function openCompareDlg(){
+  if(App.sheets.length<2){ toast('Potrzebujesz co najmniej 2 kart'); return; }
+  const dlg=$('compareDlg'), bd=$('backdrop');
+  const sheetOpts=App.sheets.map(s=>`<option value="${s.id}">${s.name.replace(/</g,'&lt;')} (${s.rows.length})</option>`).join('');
+  dlg.innerHTML=`<h3>Porównaj karty</h3>
+    <p class="hint">Znajdzie wiersze z <strong>karty źródłowej</strong>, których klucz występuje też w drugiej karcie. Wynik = pełne wiersze ze źródła w nowej karcie.</p>
+    <div class="row"><label>Karta źródłowa (wiersze do skopiowania)</label><select id="cmpSheetA">${sheetOpts}</select></div>
+    <div class="row"><label>Kolumna klucza w źródle</label><select id="cmpColA"></select></div>
+    <div class="row"><label>Karta do porównania</label><select id="cmpSheetB">${sheetOpts}</select></div>
+    <div class="row"><label>Kolumna klucza w drugiej karcie</label><select id="cmpColB"></select></div>
+    <div class="hint" id="cmpPreview">Podgląd: —</div>
+    <div class="actions">
+      <button class="btn light" type="button" id="cmpCancel">Anuluj</button>
+      <button class="btn primary" type="button" id="cmpOk" style="color:#fff">Utwórz kartę wspólnych</button>
+    </div>`;
+  dlg.classList.remove('hidden'); bd.classList.remove('hidden');
+
+  const fillCols=(selId, sheetId, preferName)=>{
+    const sh=App.sheets.find(s=>s.id===sheetId); const sel=dlg.querySelector('#'+selId);
+    if(!sh){ sel.innerHTML=''; return; }
+    sel.innerHTML=sh.columns.map((c,i)=>`<option value="${i}">${letter(i)} — ${String(c).replace(/</g,'&lt;')}</option>`).join('');
+    if(preferName){
+      const idx=sh.columns.findIndex(c=>norm(c).toLowerCase()===preferName);
+      if(idx>=0) sel.value=String(idx);
+      else{
+        const soft=sh.columns.findIndex(c=>/pesel/i.test(String(c)));
+        if(soft>=0) sel.value=String(soft);
+      }
+    }
+  };
+  const sheetA=()=>App.sheets.find(s=>s.id===dlg.querySelector('#cmpSheetA').value);
+  const sheetB=()=>App.sheets.find(s=>s.id===dlg.querySelector('#cmpSheetB').value);
+  const refreshCols=()=>{
+    const a=sheetA(), b=sheetB();
+    const prefer=a&&a.columns[+dlg.querySelector('#cmpColA').value];
+    fillCols('cmpColA', dlg.querySelector('#cmpSheetA').value, prefer?norm(prefer).toLowerCase():null);
+    fillCols('cmpColB', dlg.querySelector('#cmpSheetB').value, prefer?norm(prefer).toLowerCase():'pesel');
+    // jeśli B ma tę samą nazwę kolumny co wybrana w A — dopasuj
+    const aName=a?norm(a.columns[+dlg.querySelector('#cmpColA').value]).toLowerCase():'';
+    if(b && aName){
+      const bi=b.columns.findIndex(c=>norm(c).toLowerCase()===aName);
+      if(bi>=0) dlg.querySelector('#cmpColB').value=String(bi);
+    }
+    refreshPreview();
+  };
+  const refreshPreview=()=>{
+    const a=sheetA(), b=sheetB();
+    const ca=+dlg.querySelector('#cmpColA').value, cb=+dlg.querySelector('#cmpColB').value;
+    const el=dlg.querySelector('#cmpPreview');
+    if(!a||!b||a.id===b.id){ el.textContent='Podgląd: wybierz dwie różne karty'; return; }
+    if(ca<0||cb<0||!a.columns.length||!b.columns.length){ el.textContent='Podgląd: brak kolumn'; return; }
+    const keysB=new Set();
+    b.rows.forEach(r=>{ const k=normKey(r[cb]); if(k) keysB.add(k); });
+    let hits=0, empty=0;
+    a.rows.forEach(r=>{
+      const k=normKey(r[ca]);
+      if(!k){ empty++; return; }
+      if(keysB.has(k)) hits++;
+    });
+    el.textContent='Podgląd: '+hits+' wspólnych wierszy ze źródła „'+a.name+'” (klucze w „'+b.name+'”: '+keysB.size+')'+(empty?'; · pominięto puste: '+empty:'');
+  };
+
+  // domyślnie: aktywna + druga
+  const act=active();
+  if(act) dlg.querySelector('#cmpSheetA').value=act.id;
+  const other=App.sheets.find(s=>s.id!==(act&&act.id))||App.sheets[1];
+  if(other) dlg.querySelector('#cmpSheetB').value=other.id;
+  refreshCols();
+
+  dlg.querySelector('#cmpSheetA').onchange=refreshCols;
+  dlg.querySelector('#cmpSheetB').onchange=refreshCols;
+  dlg.querySelector('#cmpColA').onchange=()=>{
+    const a=sheetA(), b=sheetB();
+    const aName=a?norm(a.columns[+dlg.querySelector('#cmpColA').value]).toLowerCase():'';
+    if(b && aName){
+      const bi=b.columns.findIndex(c=>norm(c).toLowerCase()===aName);
+      if(bi>=0) dlg.querySelector('#cmpColB').value=String(bi);
+    }
+    refreshPreview();
+  };
+  dlg.querySelector('#cmpColB').onchange=refreshPreview;
+  dlg.querySelector('#cmpCancel').onclick=()=>{ dlg.classList.add('hidden'); bd.classList.add('hidden'); };
+  dlg.querySelector('#cmpOk').onclick=()=>{
+    const a=sheetA(), b=sheetB();
+    const ca=+dlg.querySelector('#cmpColA').value, cb=+dlg.querySelector('#cmpColB').value;
+    if(!a||!b||a.id===b.id){ toast('Wybierz dwie różne karty'); return; }
+    if(!a.columns.length||!b.columns.length){ toast('Obie karty muszą mieć kolumny'); return; }
+    const keysB=new Set();
+    b.rows.forEach(r=>{ const k=normKey(r[cb]); if(k) keysB.add(k); });
+    const matchIdx=[];
+    a.rows.forEach((r,i)=>{ const k=normKey(r[ca]); if(k && keysB.has(k)) matchIdx.push(i); });
+    if(!matchIdx.length){ toast('Brak wspólnych kluczy'); return; }
+    const seed={
+      columns:a.columns.slice(),
+      order:a.order.slice(),
+      visible:a.visible.slice(),
+      widths:a.widths.slice(),
+      rows:matchIdx.map(i=>a.rows[i].slice())
+    };
+    const ns=newSheet('Wspólne', seed);
+    matchIdx.forEach((oldRi,j)=>{
+      if(a.rowColors[oldRi]) ns.rowColors[j]=a.rowColors[oldRi];
+      if(a.rowStatus&&a.rowStatus[oldRi]) ns.rowStatus[j]=a.rowStatus[oldRi];
+    });
+    App.sheets.push(ns);
+    App.activeId=ns.id;
+    dlg.classList.add('hidden'); bd.classList.add('hidden');
+    setRibbonTab('edycja');
+    render();
+    toast('Karta „Wspólne”: '+matchIdx.length+' wierszy (klucz: '+a.columns[ca]+' ∩ '+b.columns[cb]+')');
+  };
+}
+
 function openGroupDlg(){
   const sh=active(); const dlg=$('groupDlg'), bd=$('backdrop');
   const opts=sh.columns.map((c,i)=>`<option value="${i}">${c}</option>`).join('');
@@ -1926,8 +2098,101 @@ async function copySelected(opts){
   toast('Skopiowano '+(n===1&&App.activeCell?'komórkę':n+' wierszy'));
   return true;
 }
-function sendSelectedToNew(){const sh=active(); if(!sh.selected.size){toast('Zaznacz wiersze'); return;} const idxs=[...sh.selected].sort((a,b)=>a-b); const seed={columns:sh.columns.slice(),order:sh.order.slice(),visible:sh.visible.slice(),widths:sh.widths.slice(),rows:idxs.map(i=>sh.rows[i].slice())}; const ns=newSheet('Wybrane',seed); idxs.forEach((oldRi,j)=>{if(sh.rowColors[oldRi]) ns.rowColors[j]=sh.rowColors[oldRi]; if(sh.rowStatus&&sh.rowStatus[oldRi]) ns.rowStatus[j]=sh.rowStatus[oldRi];}); App.sheets.push(ns); App.activeId=ns.id; render(); toast('Nowa karta Wybrane');}
-function sendSelectedToSheet(id){const sh=active(), target=App.sheets.find(s=>s.id===id); if(!sh||!target||!sh.selected.size)return; if(!target.columns.length){target.columns=sh.columns.slice(); target.order=sh.order.slice(); target.visible=sh.visible.slice(); target.widths=sh.widths.slice();} [...sh.selected].sort((a,b)=>a-b).forEach(i=>target.rows.push(Array.from({length:target.columns.length},(_,ci)=>sh.rows[i][ci]||''))); App.activeId=target.id; render(); toast('Dodano do „'+target.name+'”');}
+function ensureTargetColumnsFromSource(source, target){
+  if(!target.columns.length){
+    target.columns=source.columns.slice();
+    target.order=source.order.slice();
+    target.visible=source.visible.slice();
+    target.widths=source.widths.slice();
+    return;
+  }
+  source.columns.forEach((name, sci)=>{
+    if(target.columns.includes(name)) return;
+    if(target.columns.length>=MAX){ toast('Limit '+MAX+' kolumn — nie dodano „'+name+'”'); return; }
+    const tci=target.columns.length;
+    target.columns.push(name);
+    target.order.push(tci);
+    target.visible.push(true);
+    target.widths.push(source.widths[sci]||150);
+    target.rows.forEach(r=>{ while(r.length<target.columns.length) r.push(''); });
+  });
+}
+function mapRowByColumnNames(source, target, row){
+  return target.columns.map(name=>{
+    const sci=source.columns.indexOf(name);
+    return sci>=0 ? (row[sci]??'') : '';
+  });
+}
+function transferSelectedRows(opts){
+  opts=opts||{};
+  const move=!!opts.move;
+  const targetId=opts.targetId||null;
+  const sh=active();
+  if(!sh||!sh.selected.size){ toast('Zaznacz wiersze'); return; }
+  const idxs=[...sh.selected].sort((a,b)=>a-b);
+  const n=idxs.length;
+  pushUndo();
+
+  let target;
+  if(targetId){
+    target=App.sheets.find(s=>s.id===targetId);
+    if(!target){ toast('Nie znaleziono karty'); return; }
+    ensureTargetColumnsFromSource(sh, target);
+  }else{
+    const seed={
+      columns:sh.columns.slice(),
+      order:sh.order.slice(),
+      visible:sh.visible.slice(),
+      widths:sh.widths.slice(),
+      rows:idxs.map(i=>sh.rows[i].slice())
+    };
+    target=newSheet(move?'Przeniesione':'Wybrane', seed);
+    idxs.forEach((oldRi,j)=>{
+      if(sh.rowColors[oldRi]) target.rowColors[j]=sh.rowColors[oldRi];
+      if(sh.rowStatus&&sh.rowStatus[oldRi]) target.rowStatus[j]=sh.rowStatus[oldRi];
+    });
+    App.sheets.push(target);
+  }
+
+  if(targetId){
+    idxs.forEach(i=>{
+      const destRi=target.rows.length;
+      target.rows.push(mapRowByColumnNames(sh, target, sh.rows[i]));
+      if(sh.rowColors[i]) target.rowColors[destRi]=sh.rowColors[i];
+      if(sh.rowStatus&&sh.rowStatus[i]) target.rowStatus[destRi]=sh.rowStatus[i];
+    });
+  }
+
+  if(move){
+    deleteRowsByIndex(sh, idxs);
+  }else{
+    sh.selected.clear(); sh.last=-1;
+  }
+  clearSelRange(); App.anchorCell=null; App.activeCell=null;
+  $('cellRef').textContent='—'; $('cellValue').textContent='';
+  render();
+  toast((move?'Przeniesiono ':'Skopiowano ')+n+' wierszy → „'+target.name+'”');
+}
+function sendSelectedToNew(){ transferSelectedRows({move:false}); }
+function moveSelectedToNew(){ transferSelectedRows({move:true}); }
+function sendSelectedToSheet(id){ transferSelectedRows({move:false, targetId:id}); }
+function moveSelectedToSheet(id){ transferSelectedRows({move:true, targetId:id}); }
+
+function fillSheetPickMenu(menu, move){
+  menu.innerHTML='';
+  const sh=active();
+  App.sheets.filter(s=>s.id!==sh.id).forEach(s=>{
+    const b=document.createElement('button'); b.type='button'; b.textContent=s.name;
+    b.onclick=()=>{
+      if(move) moveSelectedToSheet(s.id); else sendSelectedToSheet(s.id);
+      menu.classList.remove('open');
+    };
+    menu.append(b);
+  });
+  if(!menu.children.length){
+    const b=document.createElement('button'); b.type='button'; b.textContent='Brak innych kart'; b.disabled=true; menu.append(b);
+  }
+}
 
 function hideSelectedRows(){
   const sh=active(); ensureHidden(sh);
@@ -2413,7 +2678,9 @@ $('btnPasteHere').onclick=()=>triggerPasteHere();
 $('btnPasteHist').onclick=e=>{e.stopPropagation(); renderPasteHistMenu(); $('pasteHistMenu').classList.toggle('open');};
 $('btnFind').onclick=()=>openFindDlg();
 $('btnEmptyNew').onclick=()=>{const s=newSheet('Robocza '+App.sheets.length); App.sheets.push(s); App.activeId=s.id; render();};
-$('btnCopy').onclick=()=>copySelected(); $('btnToNew').onclick=sendSelectedToNew;
+$('btnCopy').onclick=()=>copySelected();
+$('btnToNew').onclick=sendSelectedToNew;
+$('btnMoveToNew').onclick=moveSelectedToNew;
 document.querySelectorAll('#copyToggle [data-copy-mode]').forEach(b=>{
   b.onclick=()=>setCopyMode(b.dataset.copyMode);
 });
@@ -2465,7 +2732,7 @@ $('btnGoto').onclick=()=>{
   renderGrid();
   scrollActiveIntoView();
 };
-$('btnUndo').onclick=applyUndo; $('btnRules').onclick=openRulesDlg; $('btnDedup').onclick=openDedupDlg; $('btnGroup').onclick=openGroupDlg;
+$('btnUndo').onclick=applyUndo; $('btnRules').onclick=openRulesDlg; $('btnCompare').onclick=openCompareDlg; $('btnDedup').onclick=openDedupDlg; $('btnGroup').onclick=openGroupDlg;
 $('btnArchive').onclick=markHandledToArchive;
 $('btnHide').onclick=hideSelectedRows;
 $('btnUnhide').onclick=showHiddenRows;
@@ -2476,7 +2743,8 @@ document.querySelectorAll('.ribbon-tab').forEach(tab=>{
 });
 $('btnExport').onclick=()=>$('exportMenu').classList.toggle('open');
 $('btnPdf').onclick=()=>{$('exportMenu').classList.remove('open'); toast('Zapisz jako PDF w oknie druku'); setTimeout(()=>window.print(),200);};
-$('btnToExisting').onclick=()=>{const menu=$('sheetPickMenu'); menu.classList.toggle('open'); menu.innerHTML=''; const sh=active(); App.sheets.filter(s=>s.id!==sh.id).forEach(s=>{const b=document.createElement('button'); b.type='button'; b.textContent=s.name; b.onclick=()=>{sendSelectedToSheet(s.id); menu.classList.remove('open');}; menu.append(b);}); if(!menu.children.length){const b=document.createElement('button'); b.type='button'; b.textContent='Brak innych kart'; b.disabled=true; menu.append(b);}};
+$('btnToExisting').onclick=e=>{e.stopPropagation(); const menu=$('sheetPickMenu'); $('sheetMoveMenu').classList.remove('open'); menu.classList.toggle('open'); fillSheetPickMenu(menu, false);};
+$('btnMoveToExisting').onclick=e=>{e.stopPropagation(); const menu=$('sheetMoveMenu'); $('sheetPickMenu').classList.remove('open'); menu.classList.toggle('open'); fillSheetPickMenu(menu, true);};
 $('exportMenu').querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>{
   const m=b.dataset.export; $('exportMenu').classList.remove('open');
   if(m==='copy-word'){ copyTableForWord(false, false); return; }
@@ -2487,10 +2755,10 @@ $('exportMenu').querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>{
   else exportXls(m.includes('selected'));
 });
 document.onclick=e=>{
-  if(!e.target.closest('.menu-wrap')){['exportMenu','sheetPickMenu','schemaMenu','pasteHistMenu'].forEach(id=>{const el=$(id); if(el) el.classList.remove('open');});}
+  if(!e.target.closest('.menu-wrap')){['exportMenu','sheetPickMenu','sheetMoveMenu','schemaMenu','pasteHistMenu'].forEach(id=>{const el=$(id); if(el) el.classList.remove('open');});}
   if(!e.target.closest('#colFilterPopup')&&!e.target.closest('.filter-btn')) $('colFilterPopup').classList.add('hidden');
   if(!e.target.closest('#ctxMenu')) hideCtx();
-  if(e.target.id==='backdrop'){['rulesDlg','dedupDlg','groupDlg','schemaDlg','pastePdfDlg','findDlg','statusDlg'].forEach(id=>$(id).classList.add('hidden')); $('backdrop').classList.add('hidden');}
+  if(e.target.id==='backdrop'){['rulesDlg','dedupDlg','groupDlg','compareDlg','schemaDlg','pastePdfDlg','findDlg','statusDlg'].forEach(id=>$(id).classList.add('hidden')); $('backdrop').classList.add('hidden');}
 };
 document.addEventListener('mouseup', ()=>{ App.selecting=false; });
 document.addEventListener('contextmenu', e=>{ if(e.target.closest('#dataGrid')) {/* handled per-row */} });
