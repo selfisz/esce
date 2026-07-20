@@ -221,6 +221,11 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .dossier-list{max-height:180px;overflow:auto;font-size:.78rem}
 .dossier-list div{padding:6px 0;border-bottom:1px solid var(--line)}
 
+
+.sheet.sheet-base{background:color-mix(in srgb,var(--accent) 18%,var(--panel));font-weight:700}
+.sheet.sheet-base.active{box-shadow:inset 0 -3px 0 var(--accent)}
+.sheet.sheet-park{font-style:italic}
+
 </style>
 </head>
 <body>
@@ -242,12 +247,12 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       </div>
     </div>
     <div class="ribbon-tabs" id="ribbonTabs" role="tablist">
-      <button type="button" class="ribbon-tab active" data-tab="dane" role="tab" title="Tu są przyciski wklejania — dane lądują na karcie na dole">Wklej</button>
+      <button type="button" class="ribbon-tab active" data-tab="dane" role="tab" title="Przyciski wklejania. Dane idą na aktywną kartę NA DOLE.">Wklej</button>
       <button type="button" class="ribbon-tab" data-tab="edycja" role="tab">Edycja</button>
       <button type="button" class="ribbon-tab" data-tab="widok" role="tab">Widok</button>
       <button type="button" class="ribbon-tab" data-tab="zaznaczenie" role="tab">Zaznaczenie</button>
       <button type="button" class="ribbon-tab" data-tab="narzedzia" role="tab">Narzędzia</button>
-      <button type="button" class="ribbon-tab" data-tab="rejestr" role="tab" title="Baza zobowiązanych — osobna od list do obróbki">Zobowiązani</button>
+      <button type="button" class="ribbon-tab" data-tab="rejestr" role="tab" title="Otwiera dolną kartę BAZY. Tu wklejasz zobowiązanych. Raporty dzienne → karta Lista.">Zobowiązani</button>
       <button type="button" class="ribbon-tab" data-tab="eksport" role="tab">Eksport</button>
     </div>
     <div class="ribbon active" id="ribbon-dane" data-panel="dane" role="tabpanel">
@@ -749,11 +754,28 @@ const App={workbook:'Skoroszyt bez nazwy', sheets:[], activeId:null, wrap:false,
 
 function active(){return App.sheets.find(s=>s.id===App.activeId);}
 function ensureBase(){if(!App.sheets.length){const s=newSheet('Lista'); App.sheets.push(s); App.activeId=s.id;}}
-function setRibbonTab(name){
+function setRibbonTab(name, opts){
   const id=name||'dane';
+  opts=opts||{};
   App.ribbonTab=id;
   document.querySelectorAll('.ribbon-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===id));
   document.querySelectorAll('.ribbon[data-panel]').forEach(p=>p.classList.toggle('active', p.dataset.panel===id));
+  // Tylko gdy użytkownik celowo wchodzi w bazę / listę — nie przy Na później itd.
+  if(opts.goBase){
+    const reg=ensureRegistrySheet(true);
+    refreshRegistryDerived(reg);
+    if(!opts.silent) toast('★ Zobowiązani (dół) = BAZA ludzi — tu wklejasz zobowiązanych. Raporty do obróbki → karta Lista.');
+    if(!opts.skipRender) render();
+  }else if(opts.goLista){
+    let lista=App.sheets.find(s=>s.name==='Lista');
+    if(!lista){
+      lista=App.sheets.find(s=>!isRegistrySheet(s) && s.name!==PARK_SHEET && s.name!=='Archiwum');
+    }
+    if(!lista){ lista=newSheet('Lista'); App.sheets.unshift(lista); }
+    App.activeId=lista.id;
+    if(!opts.silent) toast('Lista (dół) = tu wklejasz raporty do obróbki');
+    if(!opts.skipRender) render();
+  }
 }
 function renderSwatches(){
   const row=$('swatchRow'); if(!row) return;
@@ -1434,7 +1456,7 @@ function renderChips(){
   {
     const role=document.createElement('span'); role.className='chip';
     if(isRegistrySheet(sh)){
-      role.textContent='Zobowiązani = baza ludzi (nie lista z Excela)';
+      role.textContent='★ Tu BAZA — wklejasz zobowiązanych. Raporty → karta Lista';
       role.title='PESEL + daty sprawdzeń. Listy dzienne wklejaj na kartę Lista.';
     }else if(sh.name===PARK_SHEET){
       role.textContent='Na później = odłożone sprawy';
@@ -1442,7 +1464,7 @@ function renderChips(){
     }else if(sh.name==='Archiwum'){
       role.textContent='Archiwum = obsłużone wiersze';
     }else{
-      role.textContent='Lista = tu wklejasz Excel do obróbki';
+      role.textContent='Tu OBRÓBKA — wklejasz raporty. Baza ludzi → ★ Zobowiązani';
       role.title='Potem: Zobowiązani → Zapamiętaj z listy.';
     }
     bar.append(role); any=true;
@@ -1684,11 +1706,27 @@ function buildRowTr(sh, ri, displayIdx, cols, idxs){
 function renderSheetBar(){
   const bar=$('sheetbar'); bar.innerHTML='';
   App.sheets.forEach(sh=>{
-    const b=document.createElement('button'); b.type='button'; b.className='sheet'+(sh.id===App.activeId?' active':''); b.draggable=true;
+    const b=document.createElement('button'); b.type='button';
+    let cls='sheet'+(sh.id===App.activeId?' active':'');
+    if(isRegistrySheet(sh)) cls+=' sheet-base';
+    if(sh.name===PARK_SHEET) cls+=' sheet-park';
+    b.className=cls; b.draggable=true;
+    if(isRegistrySheet(sh)) b.title='BAZA ludzi — wklejasz zobowiązanych (PESEL)';
+    else if(sh.name===PARK_SHEET) b.title='Odłożone sprawy';
+    else b.title='Lista do obróbki — wklejasz raporty';
     if(sh._renaming){ const inp=document.createElement('input'); inp.value=sh.name; inp.onclick=e=>e.stopPropagation();
       const done=()=>{sh.name=inp.value.trim()||sh.name; sh._renaming=false; render();};
       inp.onkeydown=e=>{if(e.key==='Enter')done(); if(e.key==='Escape'){sh._renaming=false; renderSheetBar();}}; inp.onblur=done; b.append(inp); setTimeout(()=>inp.select(),0);
-    } else { b.textContent=sh.name; b.onclick=()=>{App.activeId=sh.id; App.activeCell=null; $('cellRef').textContent='—'; $('cellValue').textContent=''; render();}; b.ondblclick=e=>{e.preventDefault(); sh._renaming=true; renderSheetBar();}; }
+    } else {
+      b.textContent=isRegistrySheet(sh)?('★ '+sh.name):sh.name;
+      b.onclick=()=>{
+        App.activeId=sh.id; App.activeCell=null; $('cellRef').textContent='—'; $('cellValue').textContent='';
+        if(isRegistrySheet(sh)) setRibbonTab('rejestr',{silent:true});
+        else if(App.ribbonTab==='rejestr') setRibbonTab('dane',{silent:true});
+        render();
+      };
+      b.ondblclick=e=>{e.preventDefault(); sh._renaming=true; renderSheetBar();};
+    }
     b.ondragstart=e=>{App.dragSheet=sh.id; b.classList.add('dragging'); e.dataTransfer.effectAllowed='move';};
     b.ondragend=()=>{App.dragSheet=null; document.querySelectorAll('.sheet').forEach(x=>x.classList.remove('dragging','drag-over'));};
     b.ondragover=e=>{e.preventDefault(); b.classList.add('drag-over');}; b.ondragleave=()=>b.classList.remove('drag-over');
@@ -1935,7 +1973,36 @@ function renderGrid(){
   const wrap=$('gridWrap');
   grid.classList.toggle('wrap',App.wrap); grid.classList.toggle('center',App.center); grid.classList.toggle('plain',!!App.plain);
   const cols=visCols(sh); const idxs=sorted(sh, filtered(sh));
-  if(!sh.rows.length){empty.classList.remove('hidden'); grid.hidden=true; head.innerHTML=''; body.innerHTML=''; if(foot) foot.innerHTML=''; cg.innerHTML=''; updateStatus(sh,idxs); renderChips(); return;}
+  if(!sh.rows.length){
+    empty.classList.remove('hidden'); grid.hidden=true; head.innerHTML=''; body.innerHTML=''; if(foot) foot.innerHTML=''; cg.innerHTML='';
+    const card=empty.querySelector('.empty-card');
+    if(card){
+      if(isRegistrySheet(sh)){
+        card.innerHTML=`<h2>Tu wklejasz BAZĘ zobowiązanych</h2>
+          <p>Dolna karta <strong>★ Zobowiązani</strong> = stała baza ludzi.<br>
+          Raporty dzienne (VAT, mieszkańcy X…) wklejaj na kartę <strong>Lista</strong>.</p>
+          <div class="actions">
+            <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej bazę z Excela</button>
+            <button class="btn light" id="btnEmptyGoLista" type="button">Przejdź do Listy</button>
+          </div>`;
+      }else if(sh.name===PARK_SHEET){
+        card.innerHTML=`<h2>Na później</h2><p>Odłożone sprawy — nie wklejaj tu raportów.</p>
+          <div class="actions"><button class="btn light" id="btnEmptyGoLista" type="button">Przejdź do Listy</button></div>`;
+      }else{
+        card.innerHTML=`<h2>Tu wklejasz listę do obróbki</h2>
+          <p>Raport z Excela → <strong>ta karta (Lista)</strong>.<br>
+          Bazę ludzi trzymaj na <strong>★ Zobowiązani</strong> (dół albo zakładka u góry).</p>
+          <div class="actions">
+            <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej z Excela</button>
+            <button class="btn light" id="btnEmptyGoReg" type="button">Otwórz Zobowiązanych</button>
+          </div>`;
+      }
+      const bp=$('btnEmptyPaste'); if(bp) bp.onclick=()=>$('btnPaste').click();
+      const bg=$('btnEmptyGoLista'); if(bg) bg.onclick=()=>setRibbonTab('dane',{goLista:true});
+      const br=$('btnEmptyGoReg'); if(br) br.onclick=()=>setRibbonTab('rejestr',{goBase:true});
+    }
+    updateStatus(sh,idxs); renderChips(); return;
+  }
   empty.classList.add('hidden'); grid.hidden=false;
   cg.innerHTML=''; const c0=document.createElement('col'); c0.className='corner'; cg.append(c0);
   cols.forEach(ci=>{const c=document.createElement('col'); c.className='data'; c.style.width=(sh.widths[ci]||150)+'px'; c.dataset.ci=ci; cg.append(c);});
@@ -2744,11 +2811,12 @@ function markCompleteToday(){ markSystemsToday(REG_SYSTEMS); }
 function markTrioToday(){ markSystemsToday(['KAWA','JPK','INFZ']); }
 function fillRegSysMenu(){ /* legacy no-op */ }
 function openRegistrySheet(){
-  const reg=ensureRegistrySheet(true);
-  refreshRegistryDerived(reg);
-  setRibbonTab('rejestr');
+  setRibbonTab('rejestr', {goBase:true, silent:true, skipRender:true});
+  const reg=getRegistrySheet();
   render();
-  toast(reg.rows.length?'Zobowiązani: '+reg.rows.length+' osób':'Baza gotowa — Zapamiętaj z listy');
+  toast(reg&&reg.rows.length
+    ?('Zobowiązani: '+reg.rows.length+' osób — tu wklejasz BAZĘ')
+    :'Pusta baza — wklej tu PESEL-e albo oznaczaj z Listy przyciskami KAWA/JPK…');
 }
 function filterByStan(modes){
   const sh=active(); if(!sh) return;
@@ -3767,7 +3835,12 @@ $('btnUnhide').onclick=showHiddenRows;
 $('btnDelete').onclick=deleteSelectedRows;
 $('btnSchemas').onclick=e=>{e.stopPropagation(); renderSchemaMenu(); $('schemaMenu').classList.toggle('open');};
 document.querySelectorAll('.ribbon-tab').forEach(tab=>{
-  tab.onclick=()=>setRibbonTab(tab.dataset.tab);
+  tab.onclick=()=>{
+    const t=tab.dataset.tab;
+    if(t==='rejestr') setRibbonTab('rejestr', {goBase:true});
+    else if(t==='dane') setRibbonTab('dane', {goLista:true});
+    else setRibbonTab(t);
+  };
 });
 $('btnExport').onclick=e=>{e.stopPropagation(); $('exportMenu').classList.toggle('open');};
 $('btnPdf').onclick=()=>{$('exportMenu').classList.remove('open'); toast('Zapisz jako PDF w oknie druku'); setTimeout(()=>window.print(),200);};
