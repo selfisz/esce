@@ -287,6 +287,11 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm" id="btnRegEnrich" type="button" title="Dodaj Stan/Komplet z Rejestru do bieżącej listy (bez zmiany zwykłego wklejania)">Wzbogać z Rejestru</button>
       <button class="btn sm primary" id="btnRegComplete" type="button" title="Zaznaczone osoby: wszystkie systemy = dziś" style="color:#fff">Komplet dziś</button>
       <span class="sep"></span>
+      <button class="btn sm" id="btnParkDefer" type="button" title="Zapisz zaznaczone wiersze z bieżącej listy do parkingu Na później (przeżyją zamknięcie listy)">Odłóż zaznaczone</button>
+      <button class="btn sm" id="btnParkOpen" type="button" title="Otwórz kartę Na później">Na później</button>
+      <button class="btn sm" id="btnParkShowPerson" type="button" title="Pokaż odłożone rzeczy dla zaznaczonej osoby (PESEL)">Pokaż odłożone</button>
+      <button class="btn sm" id="btnParkDone" type="button" title="Oznacz zaznaczone w Na później jako zrobione">Oznacz zrobione</button>
+      <span class="sep"></span>
       <button class="btn sm" id="btnRegFilterTodo" type="button">Do zrobienia</button>
       <button class="btn sm" id="btnRegFilterPartial" type="button">Częściowo</button>
       <button class="btn sm" id="btnRegFilterOver" type="button">&gt;100 dni</button>
@@ -294,21 +299,22 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm" id="btnRegFilterClear" type="button">Wyczyść filtr stanu</button>
     </div>
     <div class="ribbon" id="ribbon-eksport" data-panel="eksport" role="tabpanel">
+      <div class="copy-toggle" id="exportScope" title="Zakres eksportu">
+        <button type="button" data-export-scope="auto" id="btnExportScopeAuto" class="active">Auto</button>
+        <button type="button" data-export-scope="sheet" id="btnExportScopeSheet">Cała karta</button>
+        <button type="button" data-export-scope="selected" id="btnExportScopeSel">Zaznaczone</button>
+      </div>
+      <button class="btn sm primary" id="btnExportCopy" type="button" title="Kopiuje tabelę do schowka — wklej w Wordzie/Excelu (Ctrl+V)" style="color:#fff">Kopiuj tabelę</button>
       <div class="menu-wrap">
-        <button class="btn sm" id="btnExport" type="button">Eksport ▾</button>
+        <button class="btn sm" id="btnExport" type="button">Pobierz plik ▾</button>
         <div class="menu" id="exportMenu">
-          <button type="button" data-export="csv-sheet">CSV — karta</button>
-          <button type="button" data-export="csv-selected">CSV — zaznaczone</button>
-          <button type="button" data-export="xls-sheet">Excel — karta</button>
-          <button type="button" data-export="xls-selected">Excel — zaznaczone</button>
-          <button type="button" data-export="word-sheet">Word (.doc) — karta</button>
-          <button type="button" data-export="word-selected">Word (.doc) — zaznaczone</button>
+          <button type="button" data-export="csv">CSV</button>
+          <button type="button" data-export="xls">Excel (.xls)</button>
+          <button type="button" data-export="word">Word (.doc)</button>
           <button type="button" data-export="word-plain">Word zwykły (bez kolorów)</button>
-          <button type="button" data-export="copy-word">Kopiuj tabelę → Word (Ctrl+V)</button>
-          <button type="button" data-export="copy-plain">Kopiuj zwykłą tabelę → Word</button>
-          <button type="button" id="btnPdf">PDF / Drukuj…</button>
         </div>
       </div>
+      <button class="btn sm" id="btnPdf" type="button">PDF / Drukuj…</button>
     </div>
   </header>
 
@@ -409,9 +415,12 @@ const DEFAULT_STATUSES = [
   {id:'czekaj', label:'Czekaj', color:'blue'}
 ];
 const REG_SHEET='Rejestr';
+const PARK_SHEET='Na później';
 const REG_CYCLE_DAYS=100;
 const REG_SYSTEMS=['KAWA','SINF','UFG','JPK','INFZ'];
 const REG_META=['Stan','Komplet','Źródła','Notatka'];
+const PARK_STATUS_WAIT='oczekuje';
+const PARK_STATUS_DONE='zrobione';
 const REG_STATUS={
   todo:'Do zrobienia',
   partial:'Częściowo',
@@ -685,7 +694,7 @@ const App={workbook:'Skoroszyt bez nazwy', sheets:[], activeId:null, wrap:false,
   dragCol:null, dragSheet:null, filterCol:null, activeCell:null, schemas:[], undoStack:[], activeSchema:null,
   pasteHistory:[], findCursor:{r:0,c:0}, copyMode:'copy', statuses:JSON.parse(JSON.stringify(DEFAULT_STATUSES)),
   selRange:null, anchorCell:null, editing:null, selecting:false, virtTop:0, _virtBound:false, _skipScroll:false,
-  ribbonTab:'dane'};
+  ribbonTab:'dane', exportScope:'auto'};
 
 function active(){return App.sheets.find(s=>s.id===App.activeId);}
 function ensureBase(){if(!App.sheets.length){const s=newSheet('Dane'); App.sheets.push(s); App.activeId=s.id;}}
@@ -1296,6 +1305,18 @@ function renderChips(){
     c.textContent='Rejestr-stan: do zrobienia '+due+' · OK/Dziś '+ok;
     c.title='Kolory wierszy = Stan z cyklu '+REG_CYCLE_DAYS+' dni';
     bar.append(c);
+  }
+  const park=getParkingSheet();
+  if(park&&park.rows.length){
+    const sci=park.columns.indexOf('Status');
+    const wait=park.rows.filter(r=>sci>=0 && norm(r[sci])===PARK_STATUS_WAIT).length;
+    if(wait){
+      any=true;
+      const c=document.createElement('span'); c.className='chip';
+      c.innerHTML='Na później: '+wait+' <button type="button" title="Otwórz">→</button>';
+      c.querySelector('button').onclick=()=>openParkingSheet();
+      bar.append(c);
+    }
   }
   if(sh.filter){ any=true; const c=document.createElement('span'); c.className='chip'; c.innerHTML='Globalnie: „'+sh.filter+'” <button type="button">×</button>';
     c.querySelector('button').onclick=()=>{pushUndo(); sh.filter=''; $('filterInput').value=''; render();}; bar.append(c);}
@@ -2549,6 +2570,162 @@ function filterByStan(modes){
   toast('Filtr: '+modes.join(' / '));
 }
 
+function getParkingSheet(){ return App.sheets.find(s=>s.name===PARK_SHEET)||null; }
+function ensureParkingSheet(switchTo){
+  let park=getParkingSheet();
+  if(!park){
+    const cols=['PESEL','Źródło','Opis','Dodano','Status'];
+    park=newSheet(PARK_SHEET, {
+      columns:cols, rows:[],
+      order:cols.map((_,i)=>i),
+      visible:cols.map(()=>true),
+      widths:[130,160,280,110,100]
+    });
+    App.sheets.push(park);
+  }else{
+    ['PESEL','Źródło','Opis','Dodano','Status'].forEach((n,i)=>ensureCol(park,n, i===2?280:i===1?160:110));
+  }
+  if(switchTo) App.activeId=park.id;
+  return park;
+}
+function buildParkOpis(sh, ri, keyCi){
+  const parts=[];
+  visCols(sh).forEach(ci=>{
+    if(ci===keyCi) return;
+    const name=sh.columns[ci];
+    if(name==='Stan'||name==='Komplet') return;
+    const v=norm(sh.rows[ri][ci]);
+    if(!v) return;
+    parts.push(name+': '+v);
+  });
+  if(!parts.length){
+    sh.columns.forEach((name,ci)=>{
+      if(ci===keyCi||name==='Stan'||name==='Komplet') return;
+      const v=norm(sh.rows[ri][ci]);
+      if(v) parts.push(name+': '+v);
+    });
+  }
+  const s=parts.join(' · ');
+  return s.length>500?s.slice(0,497)+'…':s;
+}
+function deferSelectedToParking(){
+  const sh=active();
+  if(!sh||!sh.rows.length){ toast('Brak danych'); return; }
+  if(sh.name===PARK_SHEET){ toast('Jesteś już w Na później'); return; }
+  if(sh.name===REG_SHEET){ toast('Odkładaj z listy roboczej (JPK itd.), nie z Rejestru'); return; }
+  const idxs=sh.selected.size?[...sh.selected].sort((a,b)=>a-b):(App.activeCell?[App.activeCell.r]:[]);
+  if(!idxs.length){ toast('Zaznacz wiersze do odłożenia'); return; }
+  const keyCi=pickKeyColumnInteractive(sh);
+  if(keyCi<0){ toast('Anulowano — potrzebny PESEL'); return; }
+
+  pushUndo();
+  const park=ensureParkingSheet(false);
+  const map={}; park.columns.forEach((n,i)=>map[n]=i);
+  const srcTag=(sh.name||'lista')+' '+todayISO();
+  let n=0, skipped=0;
+  idxs.forEach(ri=>{
+    const key=normPesel(sh.rows[ri][keyCi]);
+    if(!key){ skipped++; return; }
+    const opis=buildParkOpis(sh, ri, keyCi)||'(bez opisu)';
+    // nie duplikuj identycznego oczekującego wpisu
+    const dup=park.rows.some(r=>normPesel(r[map.PESEL])===key && norm(r[map.Opis])===opis && norm(r[map.Status])===PARK_STATUS_WAIT);
+    if(dup) return;
+    const row=Array.from({length:park.columns.length},()=>'');
+    row[map.PESEL]=key;
+    row[map['Źródło']]=srcTag;
+    row[map.Opis]=opis;
+    row[map.Dodano]=todayISO();
+    row[map.Status]=PARK_STATUS_WAIT;
+    park.rows.push(row);
+    park.rowColors[park.rows.length-1]='amber';
+    n++;
+  });
+  // upewnij się, że osoby są w rejestrze (pamięć tożsamości)
+  ensureRegistrySheet(false);
+  const reg=getRegistrySheet();
+  const rmap=registryColMap(reg);
+  const byPesel=registryIndexByPesel(reg);
+  idxs.forEach(ri=>{
+    const key=normPesel(sh.rows[ri][keyCi]);
+    if(!key) return;
+    if(byPesel.has(key)) return;
+    const row=Array.from({length:reg.columns.length},()=>'');
+    row[rmap.PESEL]=key;
+    const zci=rmap['Źródła'];
+    if(zci!=null) row[zci]=appendSourceTag('', srcTag);
+    reg.rows.push(row);
+  });
+  refreshRegistryDerived(reg);
+  render();
+  toast(n?('Odłożono '+n+' → Na później'+(skipped?', bez PESEL: '+skipped:'')):'Nic nowego (już było lub brak PESEL)');
+}
+function openParkingSheet(){
+  const park=ensureParkingSheet(true);
+  setRibbonTab('rejestr');
+  // domyślnie pokaż oczekujące
+  const sci=park.columns.indexOf('Status');
+  if(sci>=0){
+    park.colFilters={};
+    park.colFilters[sci]={mode:'in_list', values:[PARK_STATUS_WAIT]};
+  }
+  render();
+  const wait=park.rows.filter(r=>norm(r[sci])===PARK_STATUS_WAIT).length;
+  toast('Na później: '+wait+' oczekujących / '+park.rows.length+' łącznie');
+}
+function showParkingForSelectedPerson(){
+  const sh=active();
+  if(!sh) return;
+  const park=getParkingSheet();
+  if(!park||!park.rows.length){ toast('Parking pusty — najpierw Odłóż zaznaczone'); return; }
+
+  let key='';
+  if(sh.name===PARK_SHEET){
+    toast('Jesteś w Na później — użyj filtra PESEL'); return;
+  }
+  const keyCi=findKeyColumn(sh);
+  const idxs=sh.selected.size?[...sh.selected]:(App.activeCell?[App.activeCell.r]:[]);
+  if(keyCi>=0 && idxs.length){
+    key=normPesel(sh.rows[idxs[0]][keyCi]);
+  }
+  if(!key){
+    const ans=prompt('Podaj PESEL osoby, której odłożone rzeczy chcesz zobaczyć:');
+    if(ans==null) return;
+    key=normPesel(ans);
+  }
+  if(!key){ toast('Brak PESEL'); return; }
+
+  pushUndo();
+  App.activeId=park.id;
+  const pci=park.columns.indexOf('PESEL');
+  const sci=park.columns.indexOf('Status');
+  park.colFilters={};
+  if(pci>=0) park.colFilters[pci]={mode:'equals', text:key};
+  // pokaż wszystkie statusy tej osoby (oczekuje + zrobione)
+  park.filter='';
+  if($('filterInput')) $('filterInput').value='';
+  setRibbonTab('rejestr');
+  render();
+  const n=park.rows.filter(r=>normPesel(r[pci])===key).length;
+  const w=park.rows.filter(r=>normPesel(r[pci])===key && norm(r[sci])===PARK_STATUS_WAIT).length;
+  toast(n?('PESEL '+key+': '+w+' oczekujących / '+n+' łącznie'):('Brak odłożonych dla '+key));
+}
+function markParkingDone(){
+  const sh=active();
+  if(!sh||sh.name!==PARK_SHEET){ toast('Otwórz kartę Na później i zaznacz pozycje'); openParkingSheet(); return; }
+  const idxs=sh.selected.size?[...sh.selected]:(App.activeCell?[App.activeCell.r]:[]);
+  if(!idxs.length){ toast('Zaznacz pozycje do zamknięcia'); return; }
+  pushUndo();
+  const sci=sh.columns.indexOf('Status');
+  if(sci<0){ toast('Brak kolumny Status'); return; }
+  idxs.forEach(ri=>{
+    sh.rows[ri][sci]=PARK_STATUS_DONE;
+    sh.rowColors[ri]='green';
+  });
+  sh.selected.clear();
+  render();
+  toast('Oznaczono zrobione: '+idxs.length);
+}
+
 function fillSheetPickMenu(menu, move){
   menu.innerHTML='';
   const sh=active();
@@ -2635,6 +2812,32 @@ function markHandledToArchive(opts){
 }
 
 function exportCols(sh, selectedOnly){const cols=visCols(sh); const idxs=selectedOnly?[...sh.selected].sort((a,b)=>a-b):sorted(sh,filtered(sh)); return {headers:cols.map(i=>sh.columns[i]), rows:idxs.map(ri=>cols.map(i=>sh.rows[ri][i]??''))};}
+function resolveExportSelected(){
+  const sh=active();
+  if(App.exportScope==='sheet') return false;
+  if(App.exportScope==='selected'){
+    if(!sh||!sh.selected.size){ toast('Zaznacz wiersze albo ustaw zakres: Cała karta'); return null; }
+    return true;
+  }
+  // auto
+  return !!(sh && sh.selected.size);
+}
+function syncExportScopeUI(){
+  const scope=App.exportScope==='sheet'||App.exportScope==='selected'?App.exportScope:'auto';
+  App.exportScope=scope;
+  document.querySelectorAll('#exportScope [data-export-scope]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.exportScope===scope);
+  });
+}
+function setExportScope(scope, silent){
+  App.exportScope=(scope==='sheet'||scope==='selected')?scope:'auto';
+  syncExportScopeUI();
+  if(!silent){
+    toast(App.exportScope==='sheet'?'Eksport: cała karta'
+      :App.exportScope==='selected'?'Eksport: tylko zaznaczone'
+      :'Eksport: auto (zaznaczone, jeśli są)');
+  }
+}
 function download(blob,name){const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),800);}
 function xmlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function exportCsv(sel){const {headers,rows}=exportCols(active(),sel); const lines=[headers,...rows].map(r=>r.map(c=>{const s=String(c??''); return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(';')); download(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}),'eksport.csv');}
@@ -3110,6 +3313,10 @@ $('btnRegOpen').onclick=openRegistrySheet;
 $('btnRegMerge').onclick=mergeActiveIntoRegistry;
 $('btnRegEnrich').onclick=enrichActiveFromRegistry;
 $('btnRegComplete').onclick=markCompleteToday;
+$('btnParkDefer').onclick=deferSelectedToParking;
+$('btnParkOpen').onclick=openParkingSheet;
+$('btnParkShowPerson').onclick=showParkingForSelectedPerson;
+$('btnParkDone').onclick=markParkingDone;
 $('btnRegFilterTodo').onclick=()=>filterByStan([REG_STATUS.todo, REG_STATUS.partial, REG_STATUS.overdue]);
 $('btnRegFilterPartial').onclick=()=>filterByStan([REG_STATUS.partial]);
 $('btnRegFilterOver').onclick=()=>filterByStan([REG_STATUS.overdue]);
@@ -3123,19 +3330,26 @@ $('btnSchemas').onclick=e=>{e.stopPropagation(); renderSchemaMenu(); $('schemaMe
 document.querySelectorAll('.ribbon-tab').forEach(tab=>{
   tab.onclick=()=>setRibbonTab(tab.dataset.tab);
 });
-$('btnExport').onclick=()=>$('exportMenu').classList.toggle('open');
+$('btnExport').onclick=e=>{e.stopPropagation(); $('exportMenu').classList.toggle('open');};
 $('btnPdf').onclick=()=>{$('exportMenu').classList.remove('open'); toast('Zapisz jako PDF w oknie druku'); setTimeout(()=>window.print(),200);};
+$('btnExportCopy').onclick=()=>{
+  const sel=resolveExportSelected(); if(sel===null) return;
+  copyTableForWord(sel, false);
+};
+document.querySelectorAll('#exportScope [data-export-scope]').forEach(b=>{
+  b.onclick=()=>setExportScope(b.dataset.exportScope);
+});
 $('btnToExisting').onclick=e=>{e.stopPropagation(); const menu=$('sheetPickMenu'); $('sheetMoveMenu').classList.remove('open'); menu.classList.toggle('open'); fillSheetPickMenu(menu, false);};
 $('btnMoveToExisting').onclick=e=>{e.stopPropagation(); const menu=$('sheetMoveMenu'); $('sheetPickMenu').classList.remove('open'); menu.classList.toggle('open'); fillSheetPickMenu(menu, true);};
 $('exportMenu').querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>{
   const m=b.dataset.export; $('exportMenu').classList.remove('open');
-  if(m==='copy-word'){ copyTableForWord(false, false); return; }
-  if(m==='copy-plain'){ copyTableForWord(false, true); return; }
-  if(m==='word-plain'){ exportWord(false, true); return; }
-  if(m.startsWith('word')){ exportWord(m.includes('selected'), false); return; }
-  if(m.startsWith('csv')) exportCsv(m.includes('selected'));
-  else exportXls(m.includes('selected'));
+  const sel=resolveExportSelected(); if(sel===null) return;
+  if(m==='word-plain'){ exportWord(sel, true); return; }
+  if(m==='word'){ exportWord(sel, false); return; }
+  if(m==='csv') exportCsv(sel);
+  else if(m==='xls') exportXls(sel);
 });
+syncExportScopeUI();
 document.onclick=e=>{
   if(!e.target.closest('.menu-wrap')){['exportMenu','sheetPickMenu','sheetMoveMenu','schemaMenu','pasteHistMenu'].forEach(id=>{const el=$(id); if(el) el.classList.remove('open');});}
   if(!e.target.closest('#colFilterPopup')&&!e.target.closest('.filter-btn')) $('colFilterPopup').classList.add('hidden');
