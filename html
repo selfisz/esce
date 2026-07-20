@@ -257,7 +257,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
     </div>
     <div class="ribbon active" id="ribbon-dane" data-panel="dane" role="tabpanel">
       <span class="ribbon-label">Na aktywną kartę (dół)</span>
-      <button class="btn sm" id="btnPastePdf" type="button" title="Gdy z PDF leci tekst ze spacjami zamiast tabeli">Z PDF…</button>
+      <button class="btn sm" id="btnPastePdf" type="button" title="PPE/US albo AUM (PESEL + rachunki bankowe)">Z PDF…</button>
       <button class="btn sm" id="btnAppend" type="button">Dopisz</button>
       <button class="btn sm" id="btnPasteHere" type="button" title="Wklej od aktywnej komórki">Wklej tu</button>
       <div class="menu-wrap">
@@ -1144,10 +1144,152 @@ function fixMatrixHeaders(rows, preferCols){
   }
   return out;
 }
+function looksLikeAumPdf(text){
+  const t=String(text||'');
+  return /rachunki\s+bankowe\s+AUM/i.test(t) || /Nowe\s+rachunki\s+bankowe\s+AUM/i.test(t);
+}
+function isAumBankLine(line){
+  return /^\d{8}\s+\S/.test(String(line||'').trim());
+}
+function isAumNoiseLine(line){
+  const s=norm(line);
+  if(!s) return true;
+  if(/^Nowe\s+rachunki\s+bankowe\s+AUM/i.test(s)) return true;
+  if(/^klasyfikacje\s+otwartych\s+spraw/i.test(s)) return true;
+  if(/^[PN]\s*:\s*/i.test(s) && s.length<40) return true;
+  if(/^strona\s+\d+/i.test(s)) return true;
+  return false;
+}
+/** PDF AUM: bloki P:/N: → PESEL, imię i nazwisko, lista rachunków. */
+function extractAumPdf(text){
+  const raw=normalizePdfText(String(text||''));
+  if(!raw || !looksLikeAumPdf(raw)) return null;
+  // zachowaj nowe linie jeśli są; inaczej wstaw przed markerami
+  let src=String(text||'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  if(!/\n/.test(src) || src.split('\n').length<3){
+    src=src
+      .replace(/(?=[PN]\s*:)/gi,'\n')
+      .replace(/(?=Nowe\s+rachunki\s+bankowe\s+AUM)/gi,'\n')
+      .replace(/(?=klasyfikacje\s+otwartych\s+spraw)/gi,'\n')
+      .replace(/(?=\d{8}\s+[A-Za-zĄĆĘŁŃÓŚŹŻ])/g,'\n');
+  }
+  const lines=src.split('\n').map(l=>l.replace(/\u00a0/g,' ').trim()).filter(Boolean);
+  if(lines.length<2) return null;
+
+  const blocks=[];
+  let cur=null;
+  const startBlock=(kind, rest)=>{
+    if(cur) blocks.push(cur);
+    cur={kind, lines:[], headerRest:rest||''};
+  };
+  lines.forEach(line=>{
+    const m=line.match(/^([PN])\s*:\s*(.*)$/i);
+    if(m){ startBlock(m[1].toUpperCase(), m[2].trim()); return; }
+    // PESEL 11 cyfr jako start bloku (gdy brak P:)
+    if(/^\d{11}$/.test(line.replace(/\s/g,'')) && cur && cur.lines.some(isAumBankLine)){
+      startBlock('P', line.replace(/\s/g,''));
+      return;
+    }
+    if(!cur){ startBlock('?', ''); }
+    cur.lines.push(line);
+  });
+  if(cur) blocks.push(cur);
+  if(!blocks.length) return null;
+
+  const header=['PESEL','Imię i nazwisko','Adres','Klasyfikacja','Rachunki AUM','Liczba rachunków','Typ'];
+  const out=[header];
+  blocks.forEach(b=>{
+    const blob=[b.headerRest].concat(b.lines).join('\n');
+    const allText=blob;
+    let pesel='';
+    const pm=allText.match(/\b(\d{11})\b/);
+    if(pm) pesel=pm[1];
+    else if(/^\d{11}$/.test(String(b.headerRest).replace(/\s/g,''))) pesel=String(b.headerRest).replace(/\s/g,'');
+
+    let klas='';
+    const km=allText.match(/klasyfikacje\s+otwartych\s+spraw\s*:\s*([^\n]+)/i);
+    if(km) klas=norm(km[1]);
+
+    const banks=[];
+    b.lines.forEach(line=>{
+      if(isAumBankLine(line)) banks.push(norm(line));
+    });
+    // też w headerRest
+    if(isAumBankLine(b.headerRest)) banks.unshift(norm(b.headerRest));
+
+    // imię / nazwa + adres: linie przed AUM, bez szumu
+    const pre=[];
+    for(const line of b.lines){
+      if(/^Nowe\s+rachunki\s+bankowe\s+AUM/i.test(line)) break;
+      if(isAumNoiseLine(line)) continue;
+      if(isAumBankLine(line)) continue;
+      if(/klasyfikacje\s+otwartych\s+spraw/i.test(line)) continue;
+      const s=norm(line);
+      if(pesel && s.replace(/\s/g,'')===pesel) continue;
+      pre.push(s);
+    }
+    if(b.headerRest){
+      const hr=norm(b.headerRest);
+      if(hr && hr.replace(/\s/g,'')!==pesel && !isAumBankLine(hr) && !/^pesel$/i.test(hr) && !/^niop$/i.test(hr)){
+        if(!pre.includes(hr)) pre.unshift(hr);
+      }
+    }
+    // często 1. linia = imię/nazwa, reszta = adres
+    let name='', addr='';
+    if(pre.length){
+      name=pre[0];
+      addr=pre.slice(1).join(', ');
+    }
+    // placeholder z OCR — zostaw, user i tak wklei prawdziwy tekst
+    if(!banks.length && !pesel && !name) return;
+    const typ=b.kind==='N'?'NIOP':(b.kind==='P'?'PESEL':'?');
+    out.push([
+      pesel,
+      name,
+      addr,
+      klas,
+      banks.join(' · '),
+      String(banks.length),
+      typ
+    ]);
+  });
+  if(out.length<2) return null;
+  extractAumPdf._meta={rows:out.length-1, banks:out.slice(1).reduce((a,r)=>a+(+r[5]||0),0)};
+  return out;
+}
+function expandAumToAccountRows(matrix){
+  if(!matrix||matrix.length<2) return matrix;
+  const h=matrix[0];
+  const iPesel=h.indexOf('PESEL'), iName=h.indexOf('Imię i nazwisko'), iAcc=h.indexOf('Rachunki AUM');
+  const iAdr=h.indexOf('Adres'), iKl=h.indexOf('Klasyfikacja'), iTyp=h.indexOf('Typ');
+  if(iAcc<0) return matrix;
+  const out=[['PESEL','Imię i nazwisko','Adres','Klasyfikacja','Kod banku','Bank','Typ']];
+  matrix.slice(1).forEach(r=>{
+    const pesel=r[iPesel]||'', name=r[iName]||'', adr=iAdr>=0?r[iAdr]:'', kl=iKl>=0?r[iKl]:'', typ=iTyp>=0?r[iTyp]:'';
+    const parts=String(r[iAcc]||'').split(/\s·\s/).map(s=>s.trim()).filter(Boolean);
+    if(!parts.length){ out.push([pesel,name,adr,kl,'','',typ]); return; }
+    parts.forEach(p=>{
+      const m=p.match(/^(\d{8})\s+(.+)$/);
+      out.push([pesel,name,adr,kl, m?m[1]:'', m?m[2]:p, typ]);
+    });
+  });
+  return out;
+}
+
 function parsePdfSmart(text, opts){
   opts=opts||{};
   const preferCols=opts.cols&&opts.cols!=='auto'?+opts.cols:0;
   const mode=opts.mode||'auto';
+
+  // 0) PDF AUM (rachunki bankowe po PESEL)
+  if(mode==='aum' || mode==='auto' || mode==='aum-expand'){
+    let aum=extractAumPdf(text);
+    if(aum){
+      if(mode==='aum-expand' || opts.expandAum) aum=expandAumToAccountRows(aum);
+      return aum;
+    }
+    if(mode==='aum' || mode==='aum-expand') return null;
+  }
 
   // 1) Wzorzec tabeli PPE/US z PDF (ciąg ze spacjami + TERM WPL / KOD US)
   const ppe=extractPpeTable(text);
@@ -3407,24 +3549,26 @@ async function triggerPaste(append){try{const items=await navigator.clipboard.re
 function openPastePdfDlg(){
   const dlg=$('pastePdfDlg'), bd=$('backdrop');
   dlg.innerHTML=`<h3>Wklej tekst z PDF</h3>
-    <p class="hint">Skopiuj z Acrobat (z nagłówkami). Działa przy tekście <strong>ciągiem</strong>.<br>
-    V6.5: nie gubi wierszy z kwotami jak <code>1 234.00</code> (spacja tysięcy). Podgląd pokaże liczbę wierszy ≈ ostatnie LP.</p>
-    <div class="row"><label>Wklej skopiowany tekst</label><textarea id="pdfText" placeholder="Ctrl+V tutaj…"></textarea></div>
-    <div class="row"><label>Liczba kolumn</label>
-      <select id="pdfCols">
-        <option value="auto">Auto</option>
-        <option value="9" selected>9 (LP…SUMA)</option>
-        <option value="8">8</option>
-        <option value="10">10</option>
-        <option value="12">12</option>
-      </select>
-    </div>
-    <div class="row"><label>Jak dzielić (gdy nie PPE)</label>
+    <p class="hint"><strong>AUM:</strong> skopiuj z PDF bloki „P: … / Nowe rachunki bankowe AUM” → tabela PESEL + nazwisko + rachunki.<br>
+    <strong>PPE/US:</strong> tabele LP/POD/KWOTA jak wcześniej.</p>
+    <div class="row"><label>Wklej skopiowany tekst</label><textarea id="pdfText" placeholder="Ctrl+V tutaj — np. P: 123… Imię Nazwisko … Nowe rachunki bankowe AUM: …"></textarea></div>
+    <div class="row"><label>Typ PDF</label>
       <select id="pdfMode">
-        <option value="auto" selected>Auto / wzorzec PPE</option>
+        <option value="auto" selected>Auto (AUM / PPE)</option>
+        <option value="aum">AUM — 1 wiersz = 1 osoba</option>
+        <option value="aum-expand">AUM — 1 wiersz = 1 rachunek</option>
         <option value="words">Każda spacja</option>
         <option value="spaces">2+ spacje</option>
         <option value="tab">Tabulatory</option>
+      </select>
+    </div>
+    <div class="row"><label>Liczba kolumn (tylko PPE)</label>
+      <select id="pdfCols">
+        <option value="auto">Auto</option>
+        <option value="9">9 (LP…SUMA)</option>
+        <option value="8">8</option>
+        <option value="10">10</option>
+        <option value="12">12</option>
       </select>
     </div>
     <div class="hint" id="pdfPreview">Podgląd: —</div>
@@ -3437,7 +3581,10 @@ function openPastePdfDlg(){
   const readOpts=()=>({mode:dlg.querySelector('#pdfMode').value, cols:dlg.querySelector('#pdfCols').value});
   const refresh=()=>{
     const m=parsePdfSmart(dlg.querySelector('#pdfText').value, readOpts());
-    dlg.querySelector('#pdfPreview').textContent='Podgląd: '+matrixPreview(m);
+    const meta=extractAumPdf._meta;
+    let extra='';
+    if(m && m[0] && m[0][0]==='PESEL' && meta) extra=' · AUM: '+meta.rows+' osób, '+meta.banks+' rachunków';
+    dlg.querySelector('#pdfPreview').textContent='Podgląd: '+matrixPreview(m)+extra;
   };
   dlg.querySelector('#pdfText').oninput=refresh;
   dlg.querySelector('#pdfMode').onchange=refresh;
