@@ -26,6 +26,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .btn:hover{background:rgba(255,255,255,.14)}.btn.primary{background:var(--accent)}.btn.primary:hover{background:var(--accent2)}
 .btn.ghost{background:transparent;border-color:rgba(255,255,255,.14)}.btn.light{background:var(--panel);color:var(--text);border-color:var(--line)}.btn.light:hover{background:var(--panel2)}
 .btn.danger{color:#fecdd3}.btn.sm{padding:5px 8px;font-size:.75rem}.btn.active{outline:2px solid color-mix(in srgb,var(--accent) 70%,#fff);outline-offset:1px}
+.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
 .ribbon{display:none;gap:6px;flex-wrap:wrap;align-items:center;padding-top:2px}
 .ribbon.active{display:flex}
 .ribbon-tabs{display:flex;gap:2px;flex-wrap:wrap;align-items:center;border-bottom:1px solid rgba(255,255,255,.12);padding-bottom:6px;margin-top:2px}
@@ -181,8 +182,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .dlg .actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px}
 .backdrop{position:fixed;inset:0;background:rgba(10,16,28,.45);z-index:45}
 .hidden{display:none!important}
-.ctx{position:fixed;z-index:70;min-width:200px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:none}
+.ctx{position:fixed;z-index:70;min-width:200px;max-width:min(280px,92vw);max-height:min(70vh,560px);overflow:auto;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:none}
 .ctx.open{display:block}
+.grid.virt-mode tbody tr:not(.virt-spacer){height:34px}
+.grid.virt-mode tbody tr:not(.virt-spacer) .cell{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis;max-height:34px}
 .ctx .ctx-h{font-size:.72rem;color:var(--muted);padding:4px 10px 6px;font-weight:650}
 .ctx button{width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font:inherit;cursor:pointer;display:flex;align-items:center;gap:8px}
 .ctx button:hover{background:var(--panel2)}
@@ -238,6 +241,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
         <div class="wb-meta" id="wbMeta">V8 · Zobowiązani · Excel-lite</div>
       </div>
       <div class="chrome-actions">
+        <div class="copy-toggle" id="workModeToggle" title="Tryb doraźny: wklejasz cokolwiek, bez powiązań z bazą. Tryb z bazą: listy są powiązane z Zobowiązanymi — oznaczenia synchronizują się automatycznie.">
+          <button type="button" data-work-mode="adhoc" id="btnWorkAdhoc" class="active">Doraźny</button>
+          <button type="button" data-work-mode="linked" id="btnWorkLinked">Z bazą</button>
+        </div>
         <span class="offline-pill" id="offlinePill" title="Brak sieci: CSP blokuje connect/fetch/CDN. Dane tylko w tej karcie przeglądarki (+ schematy w localStorage).">Offline · sandbox</span>
         <button class="btn primary" id="btnPaste" type="button">Wklej</button>
         <button class="btn ghost" id="btnSaveWb" type="button" title="Zapisz cały skoroszyt (JSON)">Zapisz</button>
@@ -284,11 +291,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <div class="swatch-row" id="swatchRow"></div>
     </div>
     <div class="ribbon" id="ribbon-zaznaczenie" data-panel="zaznaczenie" role="tabpanel">
-      <div class="copy-toggle" id="copyToggle" title="Tryb Ctrl+C / przycisku Kopiuj">
+      <div class="copy-toggle" id="copyToggle" title="Ctrl+C: kopiuj albo kopiuj + przenieś wiersz do Archiwum">
         <button type="button" data-copy-mode="copy" id="btnCopyModeCopy">Ctrl+C</button>
-        <button type="button" data-copy-mode="archive" id="btnCopyModeArch" class="arch">→ Archiwum</button>
+        <button type="button" data-copy-mode="archive" id="btnCopyModeArch" class="arch">Ctrl+C → Archiwum</button>
       </div>
-      <button class="btn sm" id="btnCopy" type="button" title="Kopiuj zaznaczone">Kopiuj</button>
       <span class="sep"></span>
       <button class="btn sm" id="btnToNew" type="button" title="Kopiuj zaznaczone do nowej karty (zostajesz tutaj)">→ nowa</button>
       <button class="btn sm" id="btnMoveToNew" type="button" title="Przenieś zaznaczone do nowej karty i usuń z bieżącej">Przenieś → nowa</button>
@@ -310,9 +316,6 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
     <div class="ribbon" id="ribbon-rejestr" data-panel="rejestr" role="tabpanel">
       <span class="ribbon-label" title="Lista = obróbka. Zobowiązani = pamięć PESEL.">Lista ≠ Zobowiązani</span>
       <button class="btn sm" id="btnRegOpen" type="button" title="Otwórz bazę zobowiązanych (osobna karta)">Otwórz bazę</button>
-      <button class="btn sm" id="btnRegMerge" type="button" title="Opcjonalnie: tylko PESEL + źródło, bez dat systemów">Zapamiętaj PESEL</button>
-      <button class="btn sm" id="btnRegEnrich" type="button" title="Pokaż kolory Stan na liście (zwykle nie trzeba — po oznaczeniu samo)">Pokaż status</button>
-      <span class="sep"></span>
       <span class="ribbon-label">Dziś:</span>
       <button class="btn sm" type="button" data-sys-today="KAWA" title="Zaznaczone → KAWA dziś + źródło listy">KAWA</button>
       <button class="btn sm" type="button" data-sys-today="SINF" title="Zaznaczone → SINF dziś + źródło listy">SINF</button>
@@ -321,6 +324,9 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm" type="button" data-sys-today="INFZ" title="Zaznaczone → INFZ dziś + źródło listy">INFZ</button>
       <button class="btn sm" id="btnRegTrio" type="button" title="Zaznaczone → KAWA+JPK+INFZ dziś (częsty zestaw)">KAWA+JPK+INFZ</button>
       <button class="btn sm primary" id="btnRegComplete" type="button" title="Wszystkie 5 systemów = dziś" style="color:#fff">Komplet</button>
+      <span class="sep"></span>
+      <button class="btn sm" id="btnSyncToBase" type="button" title="Przenieś oznaczenia z listy do bazy Zobowiązanych (tryb Z bazą). Osoby spoza bazy → dialog.">Synchronizuj z bazą</button>
+      <button class="btn sm" id="btnSetKeyCol" type="button" title="Ręcznie wskaż kolumnę z PESEL/NIP na tej liście (gdy automatyczne wykrywanie nie działa)">Ustaw kolumnę klucza</button>
       <button class="btn sm" id="btnRegDossier" type="button" title="Kartoteka: Zobowiązani + Na później">Kartoteka</button>
       <button class="btn sm" id="btnRegGuard" type="button" title="Oznacz powtórki: Archiwum / świeży komplet / parking">Strażnik</button>
       <span class="sep"></span>
@@ -329,11 +335,14 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm" id="btnParkShowPerson" type="button" title="Pokaż odłożone rzeczy dla zaznaczonej osoby (PESEL)">Pokaż odłożone</button>
       <button class="btn sm" id="btnParkDone" type="button" title="Oznacz zaznaczone w Na później jako zrobione">Oznacz zrobione</button>
       <span class="sep"></span>
-      <button class="btn sm" id="btnRegFilterTodo" type="button">Do zrobienia</button>
-      <button class="btn sm" id="btnRegFilterPartial" type="button">Częściowo</button>
-      <button class="btn sm" id="btnRegFilterOver" type="button">&gt;100 dni</button>
-      <button class="btn sm" id="btnRegFilterOk" type="button">OK / Dziś</button>
-      <button class="btn sm" id="btnRegFilterClear" type="button">Wyczyść filtr stanu</button>
+      <select class="btn sm" id="regFilterSelect" title="Filtruj według stanu">
+        <option value="">Filtr stanu…</option>
+        <option value="todo">Do zrobienia</option>
+        <option value="partial">Częściowo</option>
+        <option value="over">Przeterminowane (&gt;100 dni)</option>
+        <option value="ok">OK / Dziś</option>
+        <option value="clear">— Wyczyść filtr —</option>
+      </select>
     </div>
     <div class="ribbon" id="ribbon-eksport" data-panel="eksport" role="tabpanel">
       <div class="copy-toggle" id="exportScope" title="Zakres eksportu">
@@ -441,6 +450,7 @@ const MAX=26, LETTERS=Array.from({length:MAX},(_,i)=>String.fromCharCode(65+i));
 const SCHEMA_KEY='ots_schemas_v1';
 const AUTOSAVE_KEY='ots_autosave_v1';
 const COPY_MODE_KEY='ots_copy_mode_v1';
+const WORK_MODE_KEY='ots_work_mode_v1';
 const PASTE_HIST_MAX=12;
 const ROW_PALETTE=[
   {code:'', label:'Bez koloru', bg:'#fff'},
@@ -575,20 +585,38 @@ function colorRows(indices, color){
   renderGrid();
 }
 function hideCtx(){ const m=$('ctxMenu'); if(m) m.classList.remove('open'); }
-function openRowContextMenu(e, ri){
+function openRowContextMenu(e, ri, opts){
   e.preventDefault(); e.stopPropagation();
   const sh=active(); if(!sh) return;
-  if(!sh.selected.has(ri)){ sh.selected.clear(); sh.selected.add(ri); sh.last=ri; renderGrid(); }
+  const wrap=$('gridWrap');
+  const savedScroll=wrap?wrap.scrollTop:0;
+  if(!sh.selected.has(ri)){ sh.selected.clear(); sh.selected.add(ri); sh.last=ri; renderGrid(); if(wrap) wrap.scrollTop=savedScroll; }
   const menu=$('ctxMenu');
   const n=sh.selected.size;
+  const expandColors=!!(opts&&opts.expandColors);
   const colors=ROW_PALETTE.map(p=>[p.code,p.label,p.bg]);
+  const shown=expandColors?colors:colors.slice(0,4);
   menu.innerHTML='<div class="ctx-h">Wiersz'+(n>1?'e ('+n+')':'')+' — PPM</div>';
-  colors.forEach(([code,label,bg])=>{
+  menu.append(Object.assign(document.createElement('div'),{className:'ctx-h',textContent:'Kolor'}));
+  shown.forEach(([code,label,bg])=>{
     const b=document.createElement('button'); b.type='button';
     b.innerHTML='<span class="dot" style="background:'+bg+'"></span>'+label;
     b.onclick=()=>{ colorRows([...sh.selected], code); hideCtx(); toast(code?('Kolor: '+label):'Usunięto kolor'); };
     menu.append(b);
   });
+  if(!expandColors && colors.length>4){
+    const more=document.createElement('button'); more.type='button';
+    more.textContent='Rozwiń kolory ('+(colors.length-4)+')…';
+    more.style.opacity='0.85';
+    more.onclick=(ev)=>{ ev.preventDefault(); ev.stopPropagation(); openRowContextMenu(e, ri, {expandColors:true}); };
+    menu.append(more);
+  }else if(expandColors){
+    const less=document.createElement('button'); less.type='button';
+    less.textContent='Zwiń kolory';
+    less.style.opacity='0.85';
+    less.onclick=(ev)=>{ ev.preventDefault(); ev.stopPropagation(); openRowContextMenu(e, ri, {expandColors:false}); };
+    menu.append(less);
+  }
   let sep=document.createElement('div'); sep.className='sep'; menu.append(sep);
   const stH=document.createElement('div'); stH.className='ctx-h'; stH.textContent='Status'; menu.append(stH);
   
@@ -750,7 +778,7 @@ const App={workbook:'Skoroszyt bez nazwy', sheets:[], activeId:null, wrap:false,
   dragCol:null, dragSheet:null, filterCol:null, activeCell:null, schemas:[], undoStack:[], activeSchema:null,
   pasteHistory:[], findCursor:{r:0,c:0}, copyMode:'copy', statuses:JSON.parse(JSON.stringify(DEFAULT_STATUSES)),
   selRange:null, anchorCell:null, editing:null, selecting:false, virtTop:0, _virtBound:false, _skipScroll:false,
-  ribbonTab:'dane', exportScope:'auto'};
+  ribbonTab:'dane', exportScope:'auto', workMode:'adhoc'};
 
 function active(){return App.sheets.find(s=>s.id===App.activeId);}
 function ensureBase(){if(!App.sheets.length){const s=newSheet('Lista'); App.sheets.push(s); App.activeId=s.id;}}
@@ -1444,9 +1472,20 @@ function loadMatrix(matrix, append){
     msg+=' · stopka Suma: z PDF';
   }
   extractPpeTable._meta=null;
-  setRibbonTab('edycja');
+  if(isRegistrySheet(sh)){
+    const fin=finalizeRegistryAfterPaste(sh);
+    if(fin.added.length) msg+=' · doklejono: '+fin.added.join(', ');
+    else msg+=' · baza Zobowiązani (A=NIP, B=PESEL + systemy)';
+    setRibbonTab('rejestr', {silent:true});
+  }else{
+    if(App.workMode==='linked' && sh.name!==PARK_SHEET && sh.name!=='Archiwum'){
+      const addedSys=finalizeLinkedListAfterPaste(sh);
+      if(addedSys.length) msg+=' · tryb Z BAZĄ → doklejono: '+addedSys.join(', ');
+    }
+    setRibbonTab('edycja');
+  }
   let fitted=false;
-  if(App.activeSchema){
+  if(App.activeSchema && !isRegistrySheet(sh)){
     const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?');
     if(ok) applySchemaByName(App.activeSchema,false);
     else { fitColumnWidths(sh,{wrap:true}); fitted=true; render(); }
@@ -1455,6 +1494,7 @@ function loadMatrix(matrix, append){
   }
   if(fitted) msg+=' · kolumny dopasowane';
   toast(msg);
+  scheduleAutosave();
 }
 
 function filterKey(v){
@@ -1600,7 +1640,7 @@ function renderChips(){
   {
     const role=document.createElement('span'); role.className='chip';
     if(isRegistrySheet(sh)){
-      role.textContent='★ Tu BAZA — wklejasz zobowiązanych. Raporty → karta Lista';
+      role.textContent='★ Zobowiązani: A=NIP, B=PESEL + doklejone KAWA/JPK…';
       role.title='PESEL + daty sprawdzeń. Listy dzienne wklejaj na kartę Lista.';
     }else if(sh.name===PARK_SHEET){
       role.textContent='Na później = odłożone sprawy';
@@ -1608,8 +1648,13 @@ function renderChips(){
     }else if(sh.name==='Archiwum'){
       role.textContent='Archiwum = obsłużone wiersze';
     }else{
-      role.textContent='Tu OBRÓBKA — wklejasz raporty. Baza ludzi → ★ Zobowiązani';
-      role.title='Potem: Zobowiązani → Zapamiętaj z listy.';
+      if(App.workMode==='linked'){
+        role.textContent='TRYB Z BAZĄ — oznaczenia → Zobowiązani';
+        role.title='KAWA/JPK/INFZ lądują w bazie. Po zakończeniu: Synchronizuj z bazą.';
+      }else{
+        role.textContent='TRYB DORAŹNY — bez powiązań z bazą';
+        role.title='Dane doraźne. Aby korzystać z bazy, włącz „Z bazą" u góry.';
+      }
     }
     bar.append(role); any=true;
   }
@@ -2125,9 +2170,10 @@ function renderGrid(){
     const card=empty.querySelector('.empty-card');
     if(card){
       if(isRegistrySheet(sh)){
-        card.innerHTML=`<h2>Tu wklejasz BAZĘ zobowiązanych</h2>
-          <p>Dolna karta <strong>★ Zobowiązani</strong> = stała baza ludzi.<br>
-          Raporty dzienne (VAT, mieszkańcy X…) wklejaj na kartę <strong>Lista</strong>.</p>
+        card.innerHTML=`<h2>Wklej bazę zobowiązanych (A–K…)</h2>
+          <p><strong>A = NIP</strong>, <strong>B = PESEL</strong>, dalej Twoje kolumny.<br>
+          Po wklejeniu apka <strong>doklei</strong> KAWA, SINF, UFG, JPK, INFZ (i Stan) — nic z A–K nie ginie.<br>
+          Raporty dzienne → karta <strong>Lista</strong>.</p>
           <div class="actions">
             <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej bazę z Excela</button>
             <button class="btn light" id="btnEmptyGoLista" type="button">Przejdź do Listy</button>
@@ -2136,17 +2182,29 @@ function renderGrid(){
         card.innerHTML=`<h2>Na później</h2><p>Odłożone sprawy — nie wklejaj tu raportów.</p>
           <div class="actions"><button class="btn light" id="btnEmptyGoLista" type="button">Przejdź do Listy</button></div>`;
       }else{
-        card.innerHTML=`<h2>Tu wklejasz listę do obróbki</h2>
-          <p>Raport z Excela → <strong>ta karta (Lista)</strong>.<br>
-          Bazę ludzi trzymaj na <strong>★ Zobowiązani</strong> (dół albo zakładka u góry).</p>
-          <div class="actions">
-            <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej z Excela</button>
-            <button class="btn light" id="btnEmptyGoReg" type="button">Otwórz Zobowiązanych</button>
-          </div>`;
+        if(App.workMode==='linked'){
+          card.innerHTML=`<h2>Tryb Z BAZĄ — wklej raport</h2>
+            <p>Wklej listę z Excela → automatycznie pojawią się kolumny <strong>Stan</strong> i <strong>Komplet</strong>.<br>
+            Zaznacz osobę → kliknij <strong>KAWA / JPK / INFZ</strong> → oznaczenia idą do bazy Zobowiązanych.<br>
+            Po zakończeniu: <strong>Synchronizuj z bazą</strong> przeniesie wszystko.</p>
+            <div class="actions">
+              <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej z Excela</button>
+              <button class="btn light" id="btnEmptyGoReg" type="button">Otwórz Zobowiązanych</button>
+            </div>`;
+        }else{
+          card.innerHTML=`<h2>Tryb DORAŹNY — wklej cokolwiek</h2>
+            <p>Wklej dowolną tabelkę z Excela/PDF — bez powiązań z bazą.<br>
+            Aby korzystać z bazy Zobowiązanych, włącz <strong>„Z bazą"</strong> (u góry).</p>
+            <div class="actions">
+              <button class="btn primary" id="btnEmptyPaste" type="button" style="color:#fff">Wklej z Excela</button>
+              <button class="btn ghost" id="btnEmptyLinked" type="button">Włącz tryb Z bazą</button>
+            </div>`;
+        }
       }
       const bp=$('btnEmptyPaste'); if(bp) bp.onclick=()=>$('btnPaste').click();
       const bg=$('btnEmptyGoLista'); if(bg) bg.onclick=()=>setRibbonTab('dane',{goLista:true});
       const br=$('btnEmptyGoReg'); if(br) br.onclick=()=>setRibbonTab('rejestr',{goBase:true});
+      const bl=$('btnEmptyLinked'); if(bl) bl.onclick=()=>{ setWorkMode('linked'); render(); };
     }
     updateStatus(sh,idxs); renderChips(); return;
   }
@@ -2175,40 +2233,66 @@ function renderGrid(){
     inner.ondrop=e=>{e.preventDefault(); if(App.dragCol==null||App.dragCol===ci)return; pushUndo(); const from=sh.order.indexOf(App.dragCol),to=sh.order.indexOf(ci); const o=sh.order.slice(); o.splice(from,1); o.splice(to,0,App.dragCol); sh.order=o; App.dragCol=null; render();};
     hr.append(th);
   }); head.append(hr);
+  const savedScroll=wrap?wrap.scrollTop:0;
   body.innerHTML='';
 
-  const useVirt=idxs.length>=VIRT_THRESHOLD && !App.editing;
+  // Wirtualizacja: stała wysokość wiersza (unikaj skoków scrolla). Przy zawijaniu tekstu — wyłącz.
+  const useVirt=idxs.length>=VIRT_THRESHOLD && !App.editing && !App.wrap;
+  grid.classList.toggle('virt-mode', !!useVirt);
   let start=0, end=idxs.length;
   if(useVirt && wrap){
-    const scrollTop=wrap.scrollTop||0;
+    const scrollTop=savedScroll||0;
     const viewH=wrap.clientHeight||400;
     const first=Math.max(0, Math.floor(scrollTop/ROW_H)-VIRT_BUFFER);
     const visible=Math.ceil(viewH/ROW_H)+VIRT_BUFFER*2;
     start=first;
     end=Math.min(idxs.length, first+visible);
+    App._virtStart=start; App._virtEnd=end;
     if(start>0){
       const top=document.createElement('tr'); top.className='virt-spacer';
-      const td=document.createElement('td'); td.colSpan=cols.length+1; td.style.height=(start*ROW_H)+'px';
+      const td=document.createElement('td'); td.colSpan=cols.length+1;
+      td.style.cssText='height:'+(start*ROW_H)+'px;padding:0;border:0;line-height:0';
       top.append(td); body.append(top);
     }
+  }else{
+    App._virtStart=0; App._virtEnd=idxs.length;
   }
   for(let i=start;i<end;i++){
     body.append(buildRowTr(sh, idxs[i], i, cols, idxs));
   }
   if(useVirt && wrap && end<idxs.length){
     const bot=document.createElement('tr'); bot.className='virt-spacer';
-    const td=document.createElement('td'); td.colSpan=cols.length+1; td.style.height=((idxs.length-end)*ROW_H)+'px';
+    const td=document.createElement('td'); td.colSpan=cols.length+1;
+    td.style.cssText='height:'+((idxs.length-end)*ROW_H)+'px;padding:0;border:0;line-height:0';
     bot.append(td); body.append(bot);
+  }
+  // przywróć scroll — przebudowa tbody potrafi go zresetować / skleić do góry
+  if(wrap && useVirt){
+    if(Math.abs((wrap.scrollTop||0)-savedScroll)>1) wrap.scrollTop=savedScroll;
   }
   if(wrap && !App._virtBound){
     App._virtBound=true;
     wrap.addEventListener('scroll', ()=>{
-      if(App._skipScroll) return;
+      if(App._skipScroll || App._virtScrollLock) return;
       const sh2=active(); if(!sh2) return;
+      if(App.editing || App.wrap) return;
       const n=sorted(sh2, filtered(sh2)).length;
-      if(n<VIRT_THRESHOLD || App.editing) return;
+      if(n<VIRT_THRESHOLD) return;
+      const st=wrap.scrollTop||0;
+      const first=Math.max(0, Math.floor(st/ROW_H)-VIRT_BUFFER);
+      const viewH=wrap.clientHeight||400;
+      const visible=Math.ceil(viewH/ROW_H)+VIRT_BUFFER*2;
+      const end2=Math.min(n, first+visible);
+      // przebuduj tylko gdy zmieniło się okno wierszy
+      if(App._virtStart===first && App._virtEnd===end2) return;
       clearTimeout(wrap._virtT);
-      wrap._virtT=setTimeout(()=>renderGrid(), 16);
+      wrap._virtT=setTimeout(()=>{
+        App._virtScrollLock=true;
+        const keep=wrap.scrollTop;
+        renderGrid();
+        wrap.scrollTop=keep;
+        App._virtScrollLock=false;
+      }, 24);
     }, {passive:true});
   }
 
@@ -2503,23 +2587,17 @@ function rowsTSV(sh, rowIdxs){const cols=visCols(sh); const lines=[cols.map(i=>s
 function syncCopyModeUI(){
   const mode=App.copyMode==='archive'?'archive':'copy';
   App.copyMode=mode;
-  const a=$('btnCopyModeCopy'), b=$('btnCopyModeArch'), btn=$('btnCopy');
+  const a=$('btnCopyModeCopy'), b=$('btnCopyModeArch');
   if(a) a.classList.toggle('active', mode==='copy');
   if(b) b.classList.toggle('active', mode==='archive');
-  if(btn){
-    btn.textContent=mode==='archive'?'Kopiuj → Archiwum':'Kopiuj';
-    btn.title=mode==='archive'
-      ?'Kopiuje zaznaczone i przenosi je do Archiwum (ten sam tryb co Ctrl+C)'
-      :'Kopiuje zaznaczone do schowka (ten sam tryb co Ctrl+C)';
-  }
 }
 function setCopyMode(mode, silent){
   App.copyMode=(mode==='archive')?'archive':'copy';
   try{ localStorage.setItem(COPY_MODE_KEY, App.copyMode); }catch(_){}
   syncCopyModeUI();
   if(!silent) toast(App.copyMode==='archive'
-    ?'Ctrl+C: kopiuj i przenieś do Archiwum'
-    :'Ctrl+C: tylko kopiuj');
+    ?'Tryb Archiwum: Ctrl+C kopiuje komórkę i przenosi CAŁY wiersz → Archiwum'
+    :'Tryb kopiuj: Ctrl+C tylko do schowka');
 }
 function loadCopyMode(){
   try{
@@ -2528,57 +2606,98 @@ function loadCopyMode(){
   }catch(_){ App.copyMode='copy'; }
   syncCopyModeUI();
 }
+
+function syncWorkModeUI(){
+  const adhocBtn=$('btnWorkAdhoc'), linkedBtn=$('btnWorkLinked');
+  if(adhocBtn) adhocBtn.classList.toggle('active', App.workMode==='adhoc');
+  if(linkedBtn) linkedBtn.classList.toggle('active', App.workMode==='linked');
+  const regBtns=document.querySelectorAll('[data-sys-today]');
+  regBtns.forEach(b=>{
+    b.disabled=(App.workMode==='adhoc');
+    b.title=App.workMode==='adhoc'
+      ?'Włącz tryb „Z bazą" aby używać oznaczeń systemowych'
+      :b.dataset.sysToday+' dziś + źródło listy';
+  });
+  ['btnRegComplete','btnRegTrio'].forEach(id=>{
+    const el=$(id); if(el){ el.disabled=(App.workMode==='adhoc'); }
+  });
+  const syncBtn=$('btnSyncToBase');
+  if(syncBtn){
+    syncBtn.disabled=(App.workMode==='adhoc');
+    syncBtn.title=App.workMode==='adhoc'
+      ?'Włącz tryb „Z bazą" aby synchronizować listy'
+      :'Przenieś oznaczenia z listy do bazy Zobowiązanych';
+  }
+}
+function setWorkMode(mode, silent){
+  App.workMode=(mode==='linked')?'linked':'adhoc';
+  try{ localStorage.setItem(WORK_MODE_KEY, App.workMode); }catch(_){}
+  syncWorkModeUI();
+  if(!silent){
+    toast(App.workMode==='linked'
+      ?'Tryb Z BAZĄ: listy automatycznie powiązane z Zobowiązanymi. Oznaczenia → baza.'
+      :'Tryb DORAŹNY: wklejasz cokolwiek, bez śladu w bazie Zobowiązanych.');
+  }
+}
+function loadWorkMode(){
+  try{
+    const m=localStorage.getItem(WORK_MODE_KEY);
+    App.workMode=(m==='linked')?'linked':'adhoc';
+  }catch(_){ App.workMode='adhoc'; }
+  syncWorkModeUI();
+}
 async function copySelected(opts){
   opts=opts||{};
   const sh=active(); if(!sh) return false;
+  const doArch=opts.archive!=null?!!opts.archive:(App.copyMode==='archive');
 
-  // 1) Zakres komórek (Excel-like TSV bez nagłówków)
+  // Co idzie do schowka + które wiersze ewentualnie → Archiwum
+  let text='';
+  let archiveRows=[];
+  let copyLabel='';
+
   if(App.selRange){
     const s=App.selRange;
     const cells=(s.r1-s.r0+1)*(s.c1-s.c0+1);
-    const text=rangeTSV(sh);
-    const ok=await copyText(text);
-    if(!ok){ toast('Nie udało się skopiować'); return false; }
-    const doArch=opts.archive!=null?!!opts.archive:(App.copyMode==='archive');
-    if(doArch && cells===1 && sh.selected.size){
-      // archiwum tylko przy zaznaczonych wierszach — zakres komórek = samo kopiowanie
+    text=rangeTSV(sh);
+    for(let r=s.r0;r<=s.r1;r++) archiveRows.push(r);
+    copyLabel=cells===1?'komórkę':('zakres '+ (s.r1-s.r0+1)+'×'+(s.c1-s.c0+1));
+  }else if(sh.selected.size){
+    const idxs=[...sh.selected].sort((a,b)=>a-b);
+    archiveRows=idxs;
+    if(idxs.length===1 && App.activeCell && App.activeCell.r===idxs[0]){
+      text=String(sh.rows[App.activeCell.r][App.activeCell.c]??'');
+      copyLabel='komórkę';
+    }else{
+      text=rowsTSV(sh, idxs);
+      copyLabel=idxs.length+' wierszy';
     }
-    toast(cells===1?'Skopiowano komórkę':('Skopiowano zakres '+ (s.r1-s.r0+1)+'×'+(s.c1-s.c0+1)), 'copy');
-    return true;
+  }else if(App.activeCell){
+    text=String(sh.rows[App.activeCell.r][App.activeCell.c]??'');
+    archiveRows=[App.activeCell.r];
+    copyLabel='komórkę';
+  }else{
+    toast('Zaznacz komórkę lub wiersz'); return false;
   }
 
-  if(!sh.selected.size){
-    if(App.activeCell){
-      const text=String(sh.rows[App.activeCell.r][App.activeCell.c]??'');
-      const ok=await copyText(text);
-      if(ok) toast('Skopiowano komórkę', 'copy');
-      return ok;
-    }
-    toast('Zaznacz komórki lub wiersze'); return false;
-  }
-  const n=sh.selected.size;
-  let text = '';
-  const idxs = [...sh.selected].sort((a,b)=>a-b);
-  if(n === 1 && App.activeCell && App.activeCell.r === idxs[0]){
-    text = String(sh.rows[App.activeCell.r][App.activeCell.c] ?? '');
-  } else {
-    text = rowsTSV(sh, idxs);
-  }
+  const ok=await copyText(text);
+  if(!ok){ toast('Nie udało się skopiować'); return false; }
 
-  try{await navigator.clipboard.writeText(text);}
-  catch(_){
-    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-  }
-
-  const doArch=opts.archive!=null?!!opts.archive:(App.copyMode==='archive');
   if(doArch){
-    if(sh.name==='Archiwum'){ toast('Skopiowano '+(n===1&&App.activeCell?'komórkę':'wiersze')+' (jesteś w Archiwum — bez przenoszenia)'); return true; }
+    if(sh.name==='Archiwum'){
+      toast('Skopiowano '+copyLabel+' (jesteś w Archiwum — bez przenoszenia)');
+      return true;
+    }
+    // tryb → Archiwum: schowek = komórka/zakres, a CAŁE wiersze idą do Archiwum
+    const uniq=[...new Set(archiveRows)].filter(ri=>ri>=0 && ri<sh.rows.length).sort((a,b)=>a-b);
+    if(!uniq.length){ toast('Skopiowano '+copyLabel); return true; }
+    sh.selected=new Set(uniq);
     markHandledToArchive({quiet:true, skipEmptyToast:true});
-    toast('Skopiowano '+(n===1&&App.activeCell?'komórkę':'wiersze')+' i przeniesiono → Archiwum');
+    toast('Skopiowano '+copyLabel+' i przeniesiono '+(uniq.length===1?'wiersz':'wiersze ('+uniq.length+')')+' → Archiwum');
     return true;
   }
-  toast('Skopiowano '+(n===1&&App.activeCell?'komórkę':n+' wierszy'));
+
+  toast('Skopiowano '+copyLabel);
   return true;
 }
 function ensureTargetColumnsFromSource(source, target){
@@ -2676,11 +2795,74 @@ function parseISODate(s){
   return null;
 }
 function daysBetween(a,b){ return Math.floor((b-a)/(24*3600*1000)); }
+function looksLikePesel(v){
+  const s=norm(v).replace(/[\s-]/g,'');
+  return /^\d{11}$/.test(s);
+}
+function looksLikeNip(v){
+  const s=norm(v).replace(/[\s-]/g,'');
+  return /^\d{10}$/.test(s);
+}
+function detectKeyColumnByData(sh){
+  if(!sh||!sh.rows.length) return -1;
+  const sample=sh.rows.slice(0, Math.min(20, sh.rows.length));
+  let bestPesel=-1, bestPeselCount=0;
+  let bestNip=-1, bestNipCount=0;
+  for(let ci=0; ci<sh.columns.length; ci++){
+    let peselCount=0, nipCount=0;
+    sample.forEach(row=>{
+      const v=row[ci];
+      if(looksLikePesel(v)) peselCount++;
+      else if(looksLikeNip(v)) nipCount++;
+    });
+    if(peselCount>bestPeselCount){ bestPeselCount=peselCount; bestPesel=ci; }
+    if(nipCount>bestNipCount){ bestNipCount=nipCount; bestNip=ci; }
+  }
+  const threshold=Math.max(3, sample.length*0.5);
+  if(bestPeselCount>=threshold) return bestPesel;
+  if(bestNipCount>=threshold) return bestNip;
+  return -1;
+}
 function findKeyColumn(sh){
   if(!sh||!sh.columns.length) return -1;
+  if(sh._keyColCache!=null) return sh._keyColCache;
   let i=sh.columns.findIndex(c=>/pesel/i.test(String(c)));
   if(i<0) i=sh.columns.findIndex(c=>/^nip$/i.test(norm(c)));
+  if(i<0) i=sh.columns.findIndex(c=>/identyfikator|numer.*id/i.test(norm(c)));
+  if(i<0 && isRegistrySheet(sh) && sh.columns.length>=2) i=1;
+  if(i<0) i=detectKeyColumnByData(sh);
   return i;
+}
+/** W trybie Z BAZĄ: dodaj kolumny Stan/Komplet do listy roboczej, żeby widać postęp. */
+function finalizeLinkedListAfterPaste(sh){
+  if(!sh || isRegistrySheet(sh)) return [];
+  const added=[];
+  ['Stan','Komplet'].forEach(n=>{
+    const had=sh.columns.indexOf(n)>=0;
+    const ci=ensureCol(sh, n, n==='Komplet'?110:100);
+    if(ci>=0 && !had) added.push(n);
+  });
+  return added;
+}
+
+/** Po wklejeniu bazy A–K: A=NIP, B=PESEL, doklej KAWA/JPK… na końcu (nie kasuj A–K). */
+function finalizeRegistryAfterPaste(sh){
+  if(!sh||!isRegistrySheet(sh) || !sh.columns.length) return {added:[]};
+  // A = NIP, B = PESEL (Twoja baza)
+  if(sh.columns.length>=1 && !/nip/i.test(String(sh.columns[0])) && !/pesel/i.test(String(sh.columns[0]))){
+    sh.columns[0]='NIP';
+  }
+  if(sh.columns.length>=2 && !/pesel/i.test(String(sh.columns[1]))){
+    sh.columns[1]='PESEL';
+  }
+  const added=[];
+  [...REG_SYSTEMS, ...REG_META].forEach(n=>{
+    const had=sh.columns.indexOf(n)>=0;
+    const ci=ensureCol(sh, n, (n==='Źródła'||n==='Notatka')?160:110);
+    if(ci>=0 && !had) added.push(n);
+  });
+  refreshRegistryDerived(sh);
+  return {added};
 }
 function ensureCol(sh, name, width){
   let ci=sh.columns.indexOf(name);
@@ -2705,19 +2887,17 @@ function getRegistrySheet(){
 function ensureRegistrySheet(switchTo){
   let reg=getRegistrySheet();
   if(!reg){
-    const cols=['PESEL', ...REG_SYSTEMS, ...REG_META];
+    const cols=['NIP','PESEL', ...REG_SYSTEMS, ...REG_META];
     reg=newSheet(REG_SHEET, {
       columns:cols,
       rows:[],
       order:cols.map((_,i)=>i),
       visible:cols.map(()=>true),
-      widths:cols.map((n)=>n==='PESEL'?130:n==='Źródła'||n==='Notatka'?160:100)
+      widths:cols.map((n)=>n==='PESEL'||n==='NIP'?130:n==='Źródła'||n==='Notatka'?160:100)
     });
     App.sheets.push(reg);
   }else{
-    ensureCol(reg,'PESEL',130);
-    REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
-    REG_META.forEach(n=>ensureCol(reg,n, n==='Źródła'||n==='Notatka'?160:110));
+    finalizeRegistryAfterPaste(reg);
   }
   if(switchTo) App.activeId=reg.id;
   return reg;
@@ -2771,15 +2951,56 @@ function pickKeyColumnInteractive(sh){
   let ci=findKeyColumn(sh);
   if(ci>=0) return ci;
   if(!sh.columns.length) return -1;
-  const list=sh.columns.map((c,i)=>letter(sh.order.indexOf(i)>=0?sh.order.indexOf(i):i)+' · '+c).join('\n');
-  const ans=prompt('Brak kolumny PESEL/NIP.\nPodaj literę kolumny klucza (A, B, …):\n'+list, 'A');
+  
+  const sample=sh.rows.slice(0, 3);
+  const options=sh.order.filter(i=>sh.visible[i]).map(ci=>{
+    const colLetter=letter(sh.order.indexOf(ci));
+    const colName=sh.columns[ci]||'?';
+    const sampleVals=sample.map(r=>String(r[ci]||'').slice(0,15)).join(', ');
+    const hint=looksLikePesel(sample[0]?.[ci])?'(wygląda na PESEL)':looksLikeNip(sample[0]?.[ci])?'(wygląda na NIP)':'';
+    return `${colLetter}: ${colName} → ${sampleVals} ${hint}`;
+  }).join('\n');
+  
+  const ans=prompt('Która kolumna zawiera PESEL lub NIP?\nWpisz literę kolumny:\n\n'+options, 'A');
   if(ans==null) return -1;
   const letterUp=norm(ans).toUpperCase();
   const orderPos=LETTERS.indexOf(letterUp);
-  if(orderPos>=0 && orderPos<sh.order.length) return sh.order[orderPos];
+  if(orderPos>=0 && orderPos<sh.order.length){
+    sh._keyColCache=sh.order[orderPos];
+    return sh._keyColCache;
+  }
   const byName=sh.columns.findIndex(c=>norm(c).toLowerCase()===norm(ans).toLowerCase());
+  if(byName>=0) sh._keyColCache=byName;
   return byName;
 }
+function setKeyColumnManual(){
+  const sh=active();
+  if(!sh||!sh.columns.length){ toast('Brak danych na karcie'); return; }
+  
+  const sample=sh.rows.slice(0, 3);
+  const options=sh.order.filter(i=>sh.visible[i]).map(ci=>{
+    const colLetter=letter(sh.order.indexOf(ci));
+    const colName=sh.columns[ci]||'?';
+    const sampleVals=sample.map(r=>String(r[ci]||'').slice(0,15)).join(', ');
+    const hint=looksLikePesel(sample[0]?.[ci])?'← PESEL':looksLikeNip(sample[0]?.[ci])?'← NIP':'';
+    return `${colLetter}: ${colName} → ${sampleVals} ${hint}`;
+  }).join('\n');
+  
+  const current=findKeyColumn(sh);
+  const currentInfo=current>=0?`\nObecnie: kolumna ${letter(sh.order.indexOf(current))} (${sh.columns[current]})`:'';
+  
+  const ans=prompt('Która kolumna zawiera PESEL lub NIP?\nWpisz literę kolumny:'+currentInfo+'\n\n'+options, current>=0?letter(sh.order.indexOf(current)):'A');
+  if(ans==null) return;
+  const letterUp=norm(ans).toUpperCase();
+  const orderPos=LETTERS.indexOf(letterUp);
+  if(orderPos>=0 && orderPos<sh.order.length){
+    sh._keyColCache=sh.order[orderPos];
+    toast('Kolumna klucza: '+letterUp+' ('+sh.columns[sh._keyColCache]+')');
+  }else{
+    toast('Nieprawidłowa kolumna');
+  }
+}
+
 function appendSourceTag(existing, tag){
   const t=norm(tag); if(!t) return existing||'';
   const parts=String(existing||'').split(';').map(s=>s.trim()).filter(Boolean);
@@ -2900,6 +3121,11 @@ function markSystemsToday(systems){
   const sh=active();
   if(!sh) return;
 
+  if(App.workMode==='adhoc' && !isRegistrySheet(sh)){
+    toast('Włącz tryb „Z bazą" (u góry) aby używać oznaczeń KAWA/JPK…');
+    return;
+  }
+
   // na liście roboczej baza tworzy się sama — bez osobnego „Otwórz”
   let reg=isRegistrySheet(sh) ? sh : ensureRegistrySheet(false);
   if(!reg){ toast('Nie udało się utworzyć Zobowiązanych'); return; }
@@ -2964,6 +3190,84 @@ function markSystemsToday(systems){
 }
 function markCompleteToday(){ markSystemsToday(REG_SYSTEMS); }
 function markTrioToday(){ markSystemsToday(['KAWA','JPK','INFZ']); }
+
+function syncListToRegistry(){
+  const sh=active();
+  if(!sh){ toast('Brak aktywnej karty'); return; }
+  if(isRegistrySheet(sh)){ toast('Jesteś już na bazie Zobowiązanych'); return; }
+  if(sh.name===PARK_SHEET || sh.name==='Archiwum'){ toast('Synchronizacja działa tylko z list roboczych'); return; }
+
+  const keyCi=findKeyColumn(sh);
+  if(keyCi<0){ toast('Brak kolumny PESEL/NIP na liście — nie mogę dopasować osób'); return; }
+
+  const stanCi=sh.columns.indexOf('Stan');
+  if(stanCi<0){ toast('Brak kolumny Stan — najpierw użyj oznaczeń KAWA/JPK…'); return; }
+
+  let reg=getRegistrySheet();
+  if(!reg){ toast('Brak bazy Zobowiązanych — najpierw stwórz bazę'); return; }
+
+  const rmap=registryColMap(reg);
+  const pci=rmap['PESEL'];
+  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
+
+  const byPesel=registryIndexByPesel(reg);
+  const today=todayISO();
+  const tag=listSourceTag(sh, ['SYNC']);
+
+  let updated=0, notInBase=[];
+
+  pushUndo();
+  sh.rows.forEach((row, ri)=>{
+    const stan=norm(row[stanCi]);
+    if(!stan || stan===REG_STATUS.todo) return;
+
+    const key=normPesel(row[keyCi]);
+    if(!key) return;
+
+    const dest=byPesel.get(key);
+    if(dest==null){
+      notInBase.push({ri, key, row: row.slice()});
+      return;
+    }
+
+    REG_SYSTEMS.forEach(name=>{
+      const regCi=rmap[name];
+      if(regCi==null) return;
+      const current=reg.rows[dest][regCi];
+      if(!current || current===''){
+        reg.rows[dest][regCi]=today;
+      }
+    });
+    tagPersonSource(reg, dest, tag);
+    updated++;
+  });
+
+  refreshRegistryDerived(reg);
+
+  if(notInBase.length){
+    const names=notInBase.slice(0,5).map(x=>x.key).join(', ')+(notInBase.length>5?'…':'');
+    const add=confirm('Znaleziono '+notInBase.length+' osób spoza bazy:\n'+names+'\n\nDodać je do Zobowiązanych?');
+    if(add){
+      notInBase.forEach(({key, row})=>{
+        const newRow=Array.from({length:reg.columns.length},()=>'');
+        newRow[pci]=key;
+        REG_SYSTEMS.forEach(name=>{
+          const regCi=rmap[name];
+          if(regCi!=null) newRow[regCi]=today;
+        });
+        const srcCi=rmap['Źródła'];
+        if(srcCi!=null) newRow[srcCi]=tag;
+        reg.rows.push(newRow);
+        updated++;
+      });
+      refreshRegistryDerived(reg);
+    }
+  }
+
+  render();
+  toast('Synchronizacja: '+updated+' osób zaktualizowanych w bazie');
+}
+
 function fillRegSysMenu(){ /* legacy no-op */ }
 function openRegistrySheet(){
   setRibbonTab('rejestr', {goBase:true, silent:true, skipRender:true});
@@ -3446,8 +3750,10 @@ function getOrCreateArchive(source){
 function markHandledToArchive(opts){
   opts=opts||{};
   const sh=active();
+  if(!sh) return 0;
   if(sh.name==='Archiwum'){ if(!opts.quiet) toast('Już jesteś w Archiwum'); return 0; }
   if(!sh.selected.size){ if(!opts.skipEmptyToast) toast('Zaznacz obsłużone wiersze'); return 0; }
+  if(!opts.skipUndo) pushUndo();
   const idxs=[...sh.selected].sort((a,b)=>a-b);
   const arch=getOrCreateArchive(sh);
   const stamp=new Date().toLocaleString('pl-PL');
@@ -3461,6 +3767,7 @@ function markHandledToArchive(opts){
     if(sh.rowStatus&&sh.rowStatus[i]) arch.rowStatus[arch.rows.length-1]=sh.rowStatus[i];
   });
   deleteRowsByIndex(sh, idxs);
+  App.selRange=null; App.activeCell=null; App.anchorCell=null;
   render();
   if(!opts.quiet) toast('Przeniesiono '+idxs.length+' → Archiwum');
   return idxs.length;
@@ -3915,11 +4222,13 @@ $('btnPasteHere').onclick=()=>triggerPasteHere();
 $('btnPasteHist').onclick=e=>{e.stopPropagation(); renderPasteHistMenu(); $('pasteHistMenu').classList.toggle('open');};
 $('btnFind').onclick=()=>openFindDlg();
 $('btnEmptyNew').onclick=()=>{const s=newSheet('Robocza '+App.sheets.length); App.sheets.push(s); App.activeId=s.id; render();};
-$('btnCopy').onclick=()=>copySelected();
 $('btnToNew').onclick=sendSelectedToNew;
 $('btnMoveToNew').onclick=moveSelectedToNew;
 document.querySelectorAll('#copyToggle [data-copy-mode]').forEach(b=>{
   b.onclick=()=>setCopyMode(b.dataset.copyMode);
+});
+document.querySelectorAll('#workModeToggle [data-work-mode]').forEach(b=>{
+  b.onclick=()=>setWorkMode(b.dataset.workMode);
 });
 $('btnWrap').onclick=()=>{pushUndo(); App.wrap=!App.wrap; render();}; $('btnCenter').onclick=()=>{pushUndo(); App.center=!App.center; render();};
 if($('btnToggleSums')) $('btnToggleSums').onclick=()=>{ const sh=active(); if(!sh) return; pushUndo(); sh.showSums = !sh.showSums; renderGrid(); };
@@ -3971,24 +4280,28 @@ $('btnGoto').onclick=()=>{
 };
 $('btnUndo').onclick=applyUndo; $('btnRules').onclick=openRulesDlg; $('btnCompare').onclick=openCompareDlg; $('btnDedup').onclick=openDedupDlg; $('btnGroup').onclick=openGroupDlg;
 $('btnRegOpen').onclick=openRegistrySheet;
-$('btnRegMerge').onclick=mergeActiveIntoRegistry;
-$('btnRegEnrich').onclick=enrichActiveFromRegistry;
 $('btnRegComplete').onclick=markCompleteToday;
 document.querySelectorAll('[data-sys-today]').forEach(b=>{
   b.onclick=()=>markSystemsToday([b.dataset.sysToday]);
 });
 $('btnRegTrio').onclick=markTrioToday;
+$('btnSyncToBase').onclick=syncListToRegistry;
+$('btnSetKeyCol').onclick=setKeyColumnManual;
 $('btnRegDossier').onclick=openPersonDossier;
 $('btnRegGuard').onclick=runReworkGuard;
 $('btnParkDefer').onclick=deferSelectedToParking;
 $('btnParkOpen').onclick=openParkingSheet;
 $('btnParkShowPerson').onclick=showParkingForSelectedPerson;
 $('btnParkDone').onclick=markParkingDone;
-$('btnRegFilterTodo').onclick=()=>filterByStan([REG_STATUS.todo, REG_STATUS.partial, REG_STATUS.overdue]);
-$('btnRegFilterPartial').onclick=()=>filterByStan([REG_STATUS.partial]);
-$('btnRegFilterOver').onclick=()=>filterByStan([REG_STATUS.overdue]);
-$('btnRegFilterOk').onclick=()=>filterByStan([REG_STATUS.ok, REG_STATUS.today]);
-$('btnRegFilterClear').onclick=()=>filterByStan([]);
+$('regFilterSelect').onchange=function(){
+  const v=this.value;
+  if(v==='todo') filterByStan([REG_STATUS.todo, REG_STATUS.partial, REG_STATUS.overdue]);
+  else if(v==='partial') filterByStan([REG_STATUS.partial]);
+  else if(v==='over') filterByStan([REG_STATUS.overdue]);
+  else if(v==='ok') filterByStan([REG_STATUS.ok, REG_STATUS.today]);
+  else if(v==='clear') filterByStan([]);
+  this.value='';
+};
 $('btnArchive').onclick=markHandledToArchive;
 $('btnHide').onclick=hideSelectedRows;
 $('btnUnhide').onclick=showHiddenRows;
@@ -4134,7 +4447,7 @@ document.addEventListener('keydown', e=>{
   }
 });
 
-loadSchemas(); loadCopyMode(); ensureBase(); tryRestoreAutosave(); renderSwatches(); fillRegSysMenu(); setRibbonTab(App.ribbonTab||'dane'); render(); scheduleAutosave();
+loadSchemas(); loadCopyMode(); loadWorkMode(); ensureBase(); tryRestoreAutosave(); renderSwatches(); fillRegSysMenu(); setRibbonTab(App.ribbonTab||'dane'); render(); scheduleAutosave();
 })();
 </script>
 </body>
