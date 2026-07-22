@@ -68,7 +68,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .grid thead th.corner{z-index:6;background:color-mix(in srgb,var(--head) 90%,#000)}
 .grid td.corner{background:var(--panel2);color:var(--muted);font-size:.72rem;z-index:3}
 .th-inner{display:flex;align-items:center;gap:5px;padding:8px 9px;user-select:none}
-.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.2}
+.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.2}
 .th-inner .meta{opacity:.65;font-size:.68rem;font-family:var(--mono)}.th-inner .sort{opacity:.5;font-size:.68rem}
 .filter-btn{border:0;background:transparent;color:inherit;cursor:pointer;opacity:.8;padding:0}.filter-btn.on{color:#fde68a;opacity:1}
 .resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}.grid th{position:sticky}
@@ -223,7 +223,6 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .dossier-kv b{color:var(--muted);font-weight:650}
 .dossier-list{max-height:180px;overflow:auto;font-size:.78rem}
 .dossier-list div{padding:6px 0;border-bottom:1px solid var(--line)}
-
 
 .sheet.sheet-base{background:color-mix(in srgb,var(--accent) 18%,var(--panel));font-weight:700}
 .sheet.sheet-base.active{box-shadow:inset 0 -3px 0 var(--accent)}
@@ -454,7 +453,6 @@ const COPY_MODE_KEY='ots_copy_mode_v1';
 const WORK_MODE_KEY='ots_work_mode_v1';
 const VIEW_PREFS_KEY='ots_view_prefs_v1';
 const PASTE_HIST_MAX=12;
-const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 const ROW_PALETTE=[
   {code:'', label:'Bez koloru', bg:'#fff'},
   {code:'yellow', label:'Żółty', bg:'#eab308'},
@@ -553,11 +551,9 @@ function fitColumnWidths(sh, opts){
 function autoFitColumns(){
   const sh=active(); if(!sh||!sh.columns.length){ toast('Brak kolumn'); return; }
   pushUndo();
-  const big=(sorted(sh, filtered(sh)).length>=VIRT_THRESHOLD);
-  fitColumnWidths(sh, {wrap:!big});
-  if(big) App.wrap=false;
+  fitColumnWidths(sh, {wrap:true});
   render();
-  toast(big?'Autodopasowano kolumny (bez zawijania — duża tabela)':'Autodopasowano kolumny (+ zawijanie)');
+  toast('Autodopasowano kolumny (+ zawijanie)');
 }
 /** Po sortowaniu: LP (lub 1. kolumna) = 1…N w kolejności na ekranie. */
 function renumberByView(){
@@ -1492,13 +1488,12 @@ function loadMatrix(matrix, append){
     setRibbonTab('edycja');
   }
   let fitted=false;
-  const allowWrap=(p.rows.length<VIRT_THRESHOLD);
   if(App.activeSchema && !isRegistrySheet(sh)){
     const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?');
     if(ok) applySchemaByName(App.activeSchema,false);
-    else { fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render(); }
+    else { fitColumnWidths(sh,{wrap:true}); fitted=true; render(); }
   }else{
-    fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render();
+    fitColumnWidths(sh,{wrap:true}); fitted=true; render();
   }
   if(fitted) msg+=' · kolumny dopasowane';
   toast(msg);
@@ -1714,6 +1709,7 @@ function setActiveCell(sh,ri,ci,cellEl){
   if(cellEl && !App.editing) selectAllText(cellEl);
 }
 
+const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 
 function normSelRange(r0,c0,r1,c1){
   return {r0:Math.min(r0,r1), c0:Math.min(c0,c1), r1:Math.max(r0,r1), c1:Math.max(c0,c1)};
@@ -1899,43 +1895,6 @@ function buildRowTr(sh, ri, displayIdx, cols, idxs){
   return tr;
 }
 
-function renderSheetBar(){
-  const bar=$('sheetbar'); bar.innerHTML='';
-  App.sheets.forEach(sh=>{
-    // W trybie doraźnym ukryj kartę Zobowiązani
-    if(App.workMode==='adhoc' && isRegistrySheet(sh)) return;
-    
-    const b=document.createElement('button'); b.type='button';
-    let cls='sheet'+(sh.id===App.activeId?' active':'');
-    if(isRegistrySheet(sh)) cls+=' sheet-base';
-    if(sh.name===PARK_SHEET) cls+=' sheet-park';
-    b.className=cls; b.draggable=true;
-    if(isRegistrySheet(sh)) b.title='BAZA ludzi — wklejasz zobowiązanych (PESEL)';
-    else if(sh.name===PARK_SHEET) b.title='Odłożone sprawy';
-    else b.title='Lista do obróbki — wklejasz raporty. PPM = opcje.';
-    if(sh._renaming){ const inp=document.createElement('input'); inp.value=sh.name; inp.onclick=e=>e.stopPropagation();
-      const done=()=>{sh.name=inp.value.trim()||sh.name; sh._renaming=false; render();};
-      inp.onkeydown=e=>{if(e.key==='Enter')done(); if(e.key==='Escape'){sh._renaming=false; renderSheetBar();}}; inp.onblur=done; b.append(inp); setTimeout(()=>inp.select(),0);
-    } else {
-      b.textContent=isRegistrySheet(sh)?('★ '+sh.name):sh.name;
-      b.onclick=()=>{
-        App.activeId=sh.id; App.activeCell=null; $('cellRef').textContent='—'; $('cellValue').textContent='';
-        if(isRegistrySheet(sh)) setRibbonTab('rejestr',{silent:true});
-        else if(App.ribbonTab==='rejestr') setRibbonTab('dane',{silent:true});
-        render();
-      };
-      b.ondblclick=e=>{e.preventDefault(); sh._renaming=true; renderSheetBar();};
-      b.oncontextmenu=e=>openSheetContextMenu(e, sh);
-    }
-    b.ondragstart=e=>{App.dragSheet=sh.id; b.classList.add('dragging'); e.dataTransfer.effectAllowed='move';};
-    b.ondragend=()=>{App.dragSheet=null; document.querySelectorAll('.sheet').forEach(x=>x.classList.remove('dragging','drag-over'));};
-    b.ondragover=e=>{e.preventDefault(); b.classList.add('drag-over');}; b.ondragleave=()=>b.classList.remove('drag-over');
-    b.ondrop=e=>{e.preventDefault(); if(!App.dragSheet||App.dragSheet===sh.id)return; const from=App.sheets.findIndex(x=>x.id===App.dragSheet), to=App.sheets.findIndex(x=>x.id===sh.id); const m=App.sheets.splice(from,1)[0]; App.sheets.splice(to,0,m); renderSheetBar(); toast('Zmieniono kolejność kart');};
-    bar.append(b);
-  });
-  const add=document.createElement('button'); add.type='button'; add.className='sheet-add'; add.textContent='＋'; add.onclick=()=>{const s=newSheet('Robocza '+App.sheets.length); App.sheets.push(s); App.activeId=s.id; render();}; bar.append(add);
-}
-
 function openSheetContextMenu(e, sh){
   e.preventDefault();
   e.stopPropagation();
@@ -1988,6 +1947,42 @@ function openSheetContextMenu(e, sh){
   
   ctx.style.left=Math.min(e.clientX, window.innerWidth-220)+'px';
   ctx.style.top=Math.min(e.clientY, window.innerHeight-200)+'px';
+}
+function renderSheetBar(){
+  const bar=$('sheetbar'); bar.innerHTML='';
+  App.sheets.forEach(sh=>{
+    // W trybie doraźnym ukryj kartę Zobowiązani
+    if(App.workMode==='adhoc' && isRegistrySheet(sh)) return;
+    
+    const b=document.createElement('button'); b.type='button';
+    let cls='sheet'+(sh.id===App.activeId?' active':'');
+    if(isRegistrySheet(sh)) cls+=' sheet-base';
+    if(sh.name===PARK_SHEET) cls+=' sheet-park';
+    b.className=cls; b.draggable=true;
+    if(isRegistrySheet(sh)) b.title='BAZA ludzi — wklejasz zobowiązanych (PESEL)';
+    else if(sh.name===PARK_SHEET) b.title='Odłożone sprawy';
+    else b.title='Lista do obróbki — wklejasz raporty. PPM = opcje.';
+    if(sh._renaming){ const inp=document.createElement('input'); inp.value=sh.name; inp.onclick=e=>e.stopPropagation();
+      const done=()=>{sh.name=inp.value.trim()||sh.name; sh._renaming=false; render();};
+      inp.onkeydown=e=>{if(e.key==='Enter')done(); if(e.key==='Escape'){sh._renaming=false; renderSheetBar();}}; inp.onblur=done; b.append(inp); setTimeout(()=>inp.select(),0);
+    } else {
+      b.textContent=isRegistrySheet(sh)?('★ '+sh.name):sh.name;
+      b.onclick=()=>{
+        App.activeId=sh.id; App.activeCell=null; $('cellRef').textContent='—'; $('cellValue').textContent='';
+        if(isRegistrySheet(sh)) setRibbonTab('rejestr',{silent:true});
+        else if(App.ribbonTab==='rejestr') setRibbonTab('dane',{silent:true});
+        render();
+      };
+      b.ondblclick=e=>{e.preventDefault(); sh._renaming=true; renderSheetBar();};
+      b.oncontextmenu=e=>openSheetContextMenu(e, sh);
+    }
+    b.ondragstart=e=>{App.dragSheet=sh.id; b.classList.add('dragging'); e.dataTransfer.effectAllowed='move';};
+    b.ondragend=()=>{App.dragSheet=null; document.querySelectorAll('.sheet').forEach(x=>x.classList.remove('dragging','drag-over'));};
+    b.ondragover=e=>{e.preventDefault(); b.classList.add('drag-over');}; b.ondragleave=()=>b.classList.remove('drag-over');
+    b.ondrop=e=>{e.preventDefault(); if(!App.dragSheet||App.dragSheet===sh.id)return; const from=App.sheets.findIndex(x=>x.id===App.dragSheet), to=App.sheets.findIndex(x=>x.id===sh.id); const m=App.sheets.splice(from,1)[0]; App.sheets.splice(to,0,m); renderSheetBar(); toast('Zmieniono kolejność kart');};
+    bar.append(b);
+  });
+  const add=document.createElement('button'); add.type='button'; add.className='sheet-add'; add.textContent='＋'; add.onclick=()=>{const s=newSheet('Robocza '+App.sheets.length); App.sheets.push(s); App.activeId=s.id; render();}; bar.append(add);
 }
 
 function addColumn(refCi, before){
@@ -2303,7 +2298,7 @@ function renderGrid(){
   const savedScroll=wrap?wrap.scrollTop:0;
   body.innerHTML='';
 
-  // Wirtualizacja: stała wysokość wiersza (unikaj skoków scrolla)
+  // Wirtualizacja: stała wysokość wiersza (unikaj skoków scrolla). Przy zawijaniu tekstu — wyłącz.
   const useVirt=idxs.length>=VIRT_THRESHOLD && !App.editing;
   grid.classList.toggle('virt-mode', !!useVirt);
   let start=0, end=idxs.length;
@@ -2673,6 +2668,21 @@ function loadCopyMode(){
   }catch(_){ App.copyMode='copy'; }
   syncCopyModeUI();
 }
+function saveViewPrefs(){
+  try{
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({center:App.center, wrap:App.wrap}));
+  }catch(_){}
+}
+function loadViewPrefs(){
+  try{
+    const s=localStorage.getItem(VIEW_PREFS_KEY);
+    if(s){
+      const p=JSON.parse(s);
+      App.center=!!p.center;
+      App.wrap=!!p.wrap;
+    }
+  }catch(_){}
+}
 
 function syncWorkModeUI(){
   const adhocBtn=$('btnWorkAdhoc'), linkedBtn=$('btnWorkLinked');
@@ -2685,7 +2695,7 @@ function syncWorkModeUI(){
       ?'Włącz tryb „Z bazą" aby używać oznaczeń systemowych'
       :b.dataset.sysToday+' dziś + źródło listy';
   });
-  ['btnRegComplete','btnRegTrio'].forEach(id=>{
+  ['btnRegComplete','btnRegTrio','btnAddToBase'].forEach(id=>{
     const el=$(id); if(el){ el.disabled=(App.workMode==='adhoc'); }
   });
   const syncBtn=$('btnSyncToBase');
@@ -2723,21 +2733,6 @@ function loadWorkMode(){
     App.workMode=(m==='linked')?'linked':'adhoc';
   }catch(_){ App.workMode='adhoc'; }
   syncWorkModeUI();
-}
-function saveViewPrefs(){
-  try{
-    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({center:App.center, wrap:App.wrap}));
-  }catch(_){}
-}
-function loadViewPrefs(){
-  try{
-    const s=localStorage.getItem(VIEW_PREFS_KEY);
-    if(s){
-      const p=JSON.parse(s);
-      App.center=!!p.center;
-      App.wrap=!!p.wrap;
-    }
-  }catch(_){}
 }
 async function copySelected(opts){
   opts=opts||{};
@@ -3263,21 +3258,11 @@ function markSystemsToday(systems){
       n++;
     });
     refreshRegistryDerived(reg);
-    // Wpisz daty na liście roboczej + aktualizuj Stan/Komplet
-    const listColMap={};
-    REG_SYSTEMS.forEach(name=>{
-      let ci=sh.columns.indexOf(name);
-      if(ci<0) ci=ensureCol(sh, name, 90);
-      listColMap[name]=ci;
-    });
+    // od razu widać efekt na liście — bez osobnego „Pokaż status”
     const stanCi=ensureCol(sh,'Stan',120);
     const kompCi=ensureCol(sh,'Komplet',110);
     byPesel=registryIndexByPesel(reg);
     idxs.forEach(ri=>{
-      list.forEach(name=>{
-        const ci=listColMap[name];
-        if(ci>=0) sh.rows[ri][ci]=today;
-      });
       const key=normPesel(sh.rows[ri][keyCi]);
       const dest=key?byPesel.get(key):null;
       if(dest==null) return;
@@ -3371,7 +3356,6 @@ function syncListToRegistry(){
   render();
   toast('Synchronizacja: '+updated+' osób zaktualizowanych w bazie');
 }
-
 function addMissingToRegistry(){
   const sh=active();
   if(!sh){ toast('Brak aktywnej karty'); return; }
@@ -4094,7 +4078,6 @@ function openPastePdfDlg(){
   dlg.querySelector('#pdfAppend').onclick=()=>apply(true);
   setTimeout(()=>dlg.querySelector('#pdfText').focus(), 50);
 }
-
 
 function serializeSheet(sh){
   ensureHidden(sh); ensureRowStatus(sh);
