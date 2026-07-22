@@ -3217,7 +3217,6 @@ function markSystemsToday(systems){
     return;
   }
 
-  // na liście roboczej baza tworzy się sama — bez osobnego „Otwórz”
   let reg=isRegistrySheet(sh) ? sh : ensureRegistrySheet(false);
   if(!reg){ toast('Nie udało się utworzyć Zobowiązanych'); return; }
 
@@ -3238,9 +3237,11 @@ function markSystemsToday(systems){
     });
     refreshRegistryDerived(sh);
   }else{
-    const keyCi=pickKeyColumnInteractive(sh);
+    let keyCi=findKeyColumn(sh);
+    if(keyCi<0) keyCi=pickKeyColumnInteractive(sh);
     if(keyCi<0){ toast('Anulowano'); return; }
     REG_META.forEach(nm=>ensureCol(reg,nm,160));
+    REG_SYSTEMS.forEach(nm=>ensureCol(reg,nm,100));
     const rmap=registryColMap(reg);
     let byPesel=registryIndexByPesel(reg);
     const pci=rmap['PESEL'];
@@ -3260,11 +3261,21 @@ function markSystemsToday(systems){
       n++;
     });
     refreshRegistryDerived(reg);
-    // od razu widać efekt na liście — bez osobnego „Pokaż status”
+    // Wpisz daty też na liście roboczej + Stan/Komplet
+    const listColMap={};
+    REG_SYSTEMS.forEach(name=>{
+      let ci=sh.columns.indexOf(name);
+      if(ci<0) ci=ensureCol(sh, name, 90);
+      listColMap[name]=ci;
+    });
     const stanCi=ensureCol(sh,'Stan',120);
     const kompCi=ensureCol(sh,'Komplet',110);
     byPesel=registryIndexByPesel(reg);
     idxs.forEach(ri=>{
+      list.forEach(name=>{
+        const ci=listColMap[name];
+        if(ci>=0) sh.rows[ri][ci]=today;
+      });
       const key=normPesel(sh.rows[ri][keyCi]);
       const dest=key?byPesel.get(key):null;
       if(dest==null) return;
@@ -3276,6 +3287,7 @@ function markSystemsToday(systems){
     });
   }
   render();
+  scheduleAutosave();
   const label=list.length===REG_SYSTEMS.length?'Komplet':list.join('+');
   toast(label+' → Zobowiązani ('+n+') · „'+tag+'”');
 }
@@ -3287,76 +3299,151 @@ function syncListToRegistry(){
   if(!sh){ toast('Brak aktywnej karty'); return; }
   if(isRegistrySheet(sh)){ toast('Jesteś już na bazie Zobowiązanych'); return; }
   if(sh.name===PARK_SHEET || sh.name==='Archiwum'){ toast('Synchronizacja działa tylko z list roboczych'); return; }
+  if(App.workMode==='adhoc'){ toast('Włącz tryb „Z bazą" (u góry), żeby synchronizować'); return; }
 
   const keyCi=findKeyColumn(sh);
-  if(keyCi<0){ toast('Brak kolumny PESEL/NIP na liście — nie mogę dopasować osób'); return; }
+  if(keyCi<0){
+    const picked=pickKeyColumnInteractive(sh);
+    if(picked<0){ toast('Anulowano — potrzebna kolumna PESEL/NIP'); return; }
+  }
+  const keyCol=findKeyColumn(sh);
+  if(keyCol<0){ toast('Brak kolumny PESEL/NIP na liście'); return; }
 
-  const stanCi=sh.columns.indexOf('Stan');
-  if(stanCi<0){ toast('Brak kolumny Stan — najpierw użyj oznaczeń KAWA/JPK…'); return; }
-
-  let reg=getRegistrySheet();
-  if(!reg){ toast('Brak bazy Zobowiązanych — najpierw stwórz bazę'); return; }
+  // Utwórz bazę, jeśli jeszcze nie ma
+  const reg=ensureRegistrySheet(false);
+  REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
+  REG_META.forEach(n=>ensureCol(reg,n,160));
+  ensureCol(reg,'PESEL',130);
 
   const rmap=registryColMap(reg);
   const pci=rmap['PESEL'];
   if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
 
-  const byPesel=registryIndexByPesel(reg);
+  // Kolumny systemów na liście (jeśli są)
+  const listSys={};
+  REG_SYSTEMS.forEach(name=>{ const ci=sh.columns.indexOf(name); if(ci>=0) listSys[name]=ci; });
+  const stanCi=sh.columns.indexOf('Stan');
   const today=todayISO();
   const tag=listSourceTag(sh, ['SYNC']);
 
-  let updated=0, notInBase=[];
+  // Zakres: zaznaczone, albo wszystkie wiersze
+  const idxs=sh.selected.size?[...sh.selected].sort((a,b)=>a-b):sh.rows.map((_,i)=>i);
+
+  let byPesel=registryIndexByPesel(reg);
+  let updated=0, added=0, skipped=0, notInBase=[];
 
   pushUndo();
-  sh.rows.forEach((row, ri)=>{
-    const stan=norm(row[stanCi]);
-    if(!stan || stan===REG_STATUS.todo) return;
 
-    const key=normPesel(row[keyCi]);
-    if(!key) return;
+  idxs.forEach(ri=>{
+    const row=sh.rows[ri];
+    const key=normPesel(row[keyCol]);
+    if(!key){ skipped++; return; }
 
-    const dest=byPesel.get(key);
+    // Daty z kolumn listy (KAWA/JPK…) — to jest źródło prawdy przy sync
+    const fromList={};
+    let hasListDates=false;
+    REG_SYSTEMS.forEach(name=>{
+      const ci=listSys[name];
+      if(ci==null) return;
+      const v=norm(row[ci]);
+      if(v && parseISODate(v)){ fromList[name]=v; hasListDates=true; }
+      else if(v && /^\d{4}-\d{2}-\d{2}$/.test(v)){ fromList[name]=v; hasListDates=true; }
+    });
+
+    const stan=stanCi>=0?norm(row[stanCi]):'';
+    const stanMarked=!!(stan && stan!==REG_STATUS.todo);
+
+    // Nic do przeniesienia?
+    if(!hasListDates && !stanMarked){ skipped++; return; }
+
+    let dest=byPesel.get(key);
     if(dest==null){
-      notInBase.push({ri, key, row: row.slice()});
+      notInBase.push({ri, key, fromList, stanMarked});
       return;
     }
 
-    REG_SYSTEMS.forEach(name=>{
-      const regCi=rmap[name];
-      if(regCi==null) return;
-      const current=reg.rows[dest][regCi];
-      if(!current || current===''){
-        reg.rows[dest][regCi]=today;
-      }
-    });
-    tagPersonSource(reg, dest, tag);
-    updated++;
+    let changed=false;
+    if(hasListDates){
+      REG_SYSTEMS.forEach(name=>{
+        if(!fromList[name]) return;
+        const regCi=rmap[name]; if(regCi==null) return;
+        // nadpisz pustą albo przenieś datę z listy
+        if(norm(reg.rows[dest][regCi])!==fromList[name]){
+          reg.rows[dest][regCi]=fromList[name];
+          changed=true;
+        }
+      });
+    }else if(stanMarked){
+      // Fallback: Stan ≠ do zrobienia, ale brak dat na liście → uzupełnij puste systemy dzisiejszą datą
+      REG_SYSTEMS.forEach(name=>{
+        const regCi=rmap[name]; if(regCi==null) return;
+        if(!norm(reg.rows[dest][regCi])){ reg.rows[dest][regCi]=today; changed=true; }
+      });
+    }
+    if(changed){ tagPersonSource(reg, dest, tag); updated++; }
   });
 
-  refreshRegistryDerived(reg);
-
+  // Osoby spoza bazy
   if(notInBase.length){
     const names=notInBase.slice(0,5).map(x=>x.key).join(', ')+(notInBase.length>5?'…':'');
-    const add=confirm('Znaleziono '+notInBase.length+' osób spoza bazy:\n'+names+'\n\nDodać je do Zobowiązanych?');
+    const add=confirm('Znaleziono '+notInBase.length+' osób spoza bazy:\n'+names+'\n\nDodać je do Zobowiązanych z datami z listy?');
     if(add){
-      notInBase.forEach(({key, row})=>{
+      notInBase.forEach(({key, fromList, stanMarked})=>{
         const newRow=Array.from({length:reg.columns.length},()=>'');
         newRow[pci]=key;
-        REG_SYSTEMS.forEach(name=>{
-          const regCi=rmap[name];
-          if(regCi!=null) newRow[regCi]=today;
-        });
+        let any=false;
+        if(Object.keys(fromList).length){
+          REG_SYSTEMS.forEach(name=>{
+            const regCi=rmap[name]; if(regCi==null) return;
+            if(fromList[name]){ newRow[regCi]=fromList[name]; any=true; }
+          });
+        }else if(stanMarked){
+          REG_SYSTEMS.forEach(name=>{
+            const regCi=rmap[name]; if(regCi!=null){ newRow[regCi]=today; any=true; }
+          });
+        }
+        if(!any) return;
         const srcCi=rmap['Źródła'];
         if(srcCi!=null) newRow[srcCi]=tag;
         reg.rows.push(newRow);
-        updated++;
+        byPesel.set(key, reg.rows.length-1);
+        added++;
       });
-      refreshRegistryDerived(reg);
     }
   }
 
+  refreshRegistryDerived(reg);
+
+  // Odśwież Stan/Komplet (+ daty systemów) na liście z bazy
+  const stanOut=ensureCol(sh,'Stan',120);
+  const kompOut=ensureCol(sh,'Komplet',110);
+  REG_SYSTEMS.forEach(name=>ensureCol(sh, name, 90));
+  byPesel=registryIndexByPesel(reg);
+  const rmap2=registryColMap(reg);
+  idxs.forEach(ri=>{
+    const key=normPesel(sh.rows[ri][keyCol]);
+    const dest=key?byPesel.get(key):null;
+    if(dest==null) return;
+    REG_SYSTEMS.forEach(name=>{
+      const lci=sh.columns.indexOf(name);
+      const rci=rmap2[name];
+      if(lci>=0 && rci!=null && norm(reg.rows[dest][rci])) sh.rows[ri][lci]=reg.rows[dest][rci];
+    });
+    const dates=REG_SYSTEMS.map(name=>reg.rows[dest][rmap2[name]]||'');
+    const {stan,komplet}=computePersonStatus(dates);
+    if(stanOut>=0) sh.rows[ri][stanOut]=stan;
+    if(kompOut>=0) sh.rows[ri][kompOut]=komplet;
+    const color=REG_STATUS_COLOR[stan];
+    if(color) sh.rowColors[ri]=color;
+  });
+
   render();
-  toast('Synchronizacja: '+updated+' osób zaktualizowanych w bazie');
+  scheduleAutosave();
+  const msg=[];
+  if(updated) msg.push('zaktualizowano '+updated);
+  if(added) msg.push('dodano '+added);
+  if(!msg.length) toast('Synchronizacja: nic do przeniesienia (brak dat KAWA/JPK… ani oznaczeń Stan na liście)');
+  else toast('Synchronizacja: '+msg.join(', ')+' → Zobowiązani');
 }
 function addMissingToRegistry(){
   const sh=active();
