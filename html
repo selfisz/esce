@@ -3842,38 +3842,64 @@ function runReworkGuard(){
   const sh=active();
   if(!sh||!sh.rows.length){ toast('Brak danych'); return; }
   if(isRegistrySheet(sh)||sh.name===PARK_SHEET){ toast('Strażnik działa na listach roboczych'); return; }
-  const keyCi=pickKeyColumnInteractive(sh);
+
+  let keyCi=findKeyColumn(sh);
+  if(keyCi<0) keyCi=pickKeyColumnInteractive(sh);
   if(keyCi<0){ toast('Anulowano'); return; }
+
   pushUndo();
-  const warnCi=ensureCol(sh,'Ostrzeżenie',160);
+  const warnCi=ensureCol(sh,'Ostrzeżenie',200);
   if(warnCi<0){ toast('Brak miejsca na kolumnę Ostrzeżenie'); return; }
+
   const reg=getRegistrySheet();
+  if(reg) refreshRegistryDerived(reg);
   const by=reg?registryIndexByPesel(reg):new Map();
   const rmap=reg?registryColMap(reg):{};
   const arch=archivePeselSet();
   const parkWait=parkingWaitPeselSet();
   let hits=0;
+
   sh.rows.forEach((row,ri)=>{
     const key=normPesel(row[keyCi]);
     const flags=[];
     if(key && arch.has(key)) flags.push('Archiwum');
     if(key && parkWait.has(key)) flags.push('parking');
-    if(key && by.has(key)){
+    if(key && reg && by.has(key)){
       const dest=by.get(key);
-      const stan=rmap.Stan!=null?norm(reg.rows[dest][rmap.Stan]):'';
-      if(stan===REG_STATUS.today || stan===REG_STATUS.ok) flags.push('świeży komplet');
+      const rrow=reg.rows[dest]||[];
+      const stan=rmap.Stan!=null?norm(rrow[rmap.Stan]):'';
+      const done=[];
+      REG_SYSTEMS.forEach(name=>{
+        const ci=rmap[name];
+        if(ci!=null && norm(rrow[ci])) done.push(name);
+      });
+      if(stan===REG_STATUS.today || stan===REG_STATUS.ok || done.length===REG_SYSTEMS.length){
+        flags.push('świeży komplet'+(done.length?(' ('+done.join('+')+')'):''));
+      }else if(stan===REG_STATUS.partial || (done.length>0 && done.length<REG_SYSTEMS.length)){
+        flags.push('częściowo obróbiony: '+done.join('+'));
+      }
       if(stan===REG_STATUS.overdue) flags.push('>100 dni');
+      if(stan===REG_STATUS.todo && !done.length){
+        /* w bazie, ale bez sprawdzeń — bez ostrzeżenia */
+      }
     }
     if(flags.length){
       row[warnCi]=flags.join(' · ');
-      sh.rowColors[ri]= flags.includes('Archiwum')||flags.includes('świeży komplet') ? 'red' : 'amber';
+      if(flags.some(f=>f.startsWith('świeży komplet')||f==='Archiwum')) sh.rowColors[ri]='red';
+      else if(flags.some(f=>f.startsWith('częściowo'))) sh.rowColors[ri]='orange';
+      else sh.rowColors[ri]='amber';
       hits++;
     }else{
       row[warnCi]='';
     }
   });
-  fitColumnWidths(sh,{wrap:true});
+
+  const n=sorted(sh, filtered(sh)).length;
+  fitColumnWidths(sh, {wrap: n<VIRT_THRESHOLD});
+  if(n>=VIRT_THRESHOLD) App.wrap=false;
+  try{saveViewPrefs();}catch(_){}
   render();
+  scheduleAutosave();
   toast(hits?('Strażnik: '+hits+' ostrzeżeń'):'Strażnik: czysto');
 }
 
