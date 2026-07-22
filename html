@@ -68,7 +68,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .grid thead th.corner{z-index:6;background:color-mix(in srgb,var(--head) 90%,#000)}
 .grid td.corner{background:var(--panel2);color:var(--muted);font-size:.72rem;z-index:3}
 .th-inner{display:flex;align-items:center;gap:5px;padding:8px 9px;user-select:none}
-.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.2}
+.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.2}
 .th-inner .meta{opacity:.65;font-size:.68rem;font-family:var(--mono)}.th-inner .sort{opacity:.5;font-size:.68rem}
 .filter-btn{border:0;background:transparent;color:inherit;cursor:pointer;opacity:.8;padding:0}.filter-btn.on{color:#fde68a;opacity:1}
 .resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}.grid th{position:sticky}
@@ -3035,6 +3035,22 @@ function registryIndexByPesel(reg){
   });
   return idx;
 }
+function registryIndexByKey(reg, keyCi){
+  const idx=new Map();
+  if(keyCi==null || keyCi<0) return idx;
+  reg.rows.forEach((r,i)=>{
+    const k=normPesel(r[keyCi]);
+    if(k) idx.set(k,i);
+  });
+  return idx;
+}
+function findRegistryKeyColumn(reg){
+  if(!reg) return -1;
+  const map=registryColMap(reg);
+  if(map['PESEL']!=null) return map['PESEL'];
+  if(map['NIP']!=null) return map['NIP'];
+  return findKeyColumn(reg);
+}
 function pickKeyColumnInteractive(sh){
   let ci=findKeyColumn(sh);
   if(ci>=0) return ci;
@@ -3305,10 +3321,10 @@ function syncListToRegistry(){
   if(!reg){ toast('Brak bazy Zobowiązanych — najpierw stwórz bazę'); return; }
 
   const rmap=registryColMap(reg);
-  const pci=rmap['PESEL'];
-  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
+  const pci=findRegistryKeyColumn(reg);
+  if(pci<0){ toast('Baza nie ma kolumny PESEL ani NIP'); return; }
 
-  const byPesel=registryIndexByPesel(reg);
+  const byKey=registryIndexByKey(reg, pci);
   const today=todayISO();
   const tag=listSourceTag(sh, ['SYNC']);
 
@@ -3322,7 +3338,7 @@ function syncListToRegistry(){
     const key=normPesel(row[keyCi]);
     if(!key) return;
 
-    const dest=byPesel.get(key);
+    const dest=byKey.get(key);
     if(dest==null){
       notInBase.push({ri, key, row: row.slice()});
       return;
@@ -3382,10 +3398,10 @@ function addMissingToRegistry(){
   }
   
   const rmap=registryColMap(reg);
-  const pci=rmap['PESEL'];
-  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
+  const pci=findRegistryKeyColumn(reg);
+  if(pci<0){ toast('Baza nie ma kolumny PESEL ani NIP'); return; }
 
-  const byPesel=registryIndexByPesel(reg);
+  const byKey=registryIndexByKey(reg, pci);
   
   let added=0, skipped=0;
   const toAdd=[];
@@ -3393,7 +3409,7 @@ function addMissingToRegistry(){
   sh.rows.forEach((row, ri)=>{
     const key=normPesel(row[keyCi]);
     if(!key){ skipped++; return; }
-    if(byPesel.has(key)){ skipped++; return; }
+    if(byKey.has(key)){ skipped++; return; }
     toAdd.push({key, row: row.slice()});
   });
 
@@ -3425,7 +3441,7 @@ function addMissingToRegistry(){
     if(srcCi!=null) newRow[srcCi]=tag;
     
     reg.rows.push(newRow);
-    byPesel.set(key, reg.rows.length-1);
+    byKey.set(key, reg.rows.length-1);
     added++;
   });
 
