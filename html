@@ -2917,7 +2917,7 @@ function findKeyColumn(sh){
   if(!sh||!sh.columns.length) return -1;
   if(sh._keyColCache!=null) return sh._keyColCache;
   let i=sh.columns.findIndex(c=>/pesel/i.test(String(c)));
-  if(i<0) i=sh.columns.findIndex(c=>/^nip$/i.test(norm(c)));
+  if(i<0) i=sh.columns.findIndex(c=>/\bnip\b|^nip$/i.test(norm(c)));
   if(i<0) i=sh.columns.findIndex(c=>/identyfikator|numer.*id/i.test(norm(c)));
   if(i<0 && isRegistrySheet(sh) && sh.columns.length>=2) i=1;
   if(i<0) i=detectKeyColumnByData(sh);
@@ -3038,6 +3038,68 @@ function registryIndexByPesel(reg){
   });
   return idx;
 }
+
+function normNip(v){ return norm(v).replace(/[\s-]/g,''); }
+function keyKind(v){
+  const s=norm(v).replace(/[\s-]/g,'');
+  if(/^\d{11}$/.test(s)) return 'pesel';
+  if(/^\d{10}$/.test(s)) return 'nip';
+  return '';
+}
+function registryIndexByNip(reg){
+  const map=registryColMap(reg);
+  const nci=map['NIP'];
+  const idx=new Map();
+  if(nci==null) return idx;
+  reg.rows.forEach((r,i)=>{
+    const k=normNip(r[nci]);
+    if(k) idx.set(k,i);
+  });
+  return idx;
+}
+/** Znajdź wiersz w bazie po PESEL albo NIP (zależnie od wartości klucza z listy). */
+function findRegistryRowByKey(reg, key){
+  if(!reg||!key) return null;
+  const kind=keyKind(key);
+  const rmap=registryColMap(reg);
+  if(kind==='pesel' || (!kind && String(key).replace(/\D/g,'').length===11)){
+    const by=registryIndexByPesel(reg);
+    const k=normPesel(key);
+    if(by.has(k)) return by.get(k);
+  }
+  if(kind==='nip' || (!kind && String(key).replace(/\D/g,'').length===10)){
+    const by=registryIndexByNip(reg);
+    const k=normNip(key);
+    if(by.has(k)) return by.get(k);
+  }
+  // fallback: spróbuj obie
+  const byP=registryIndexByPesel(reg);
+  const kp=normPesel(key);
+  if(kp && byP.has(kp)) return byP.get(kp);
+  const byN=registryIndexByNip(reg);
+  const kn=normNip(key);
+  if(kn && byN.has(kn)) return byN.get(kn);
+  return null;
+}
+/** Dodaj osobę do bazy — klucz z listy trafia do PESEL albo NIP. */
+function ensureRegistryPerson(reg, key){
+  let dest=findRegistryRowByKey(reg, key);
+  if(dest!=null) return dest;
+  ensureCol(reg,'NIP',130);
+  ensureCol(reg,'PESEL',130);
+  const rmap=registryColMap(reg);
+  const row=Array.from({length:reg.columns.length},()=>'');
+  const kind=keyKind(key);
+  if(kind==='nip'){
+    if(rmap.NIP!=null) row[rmap.NIP]=normNip(key);
+  }else{
+    if(rmap.PESEL!=null) row[rmap.PESEL]=normPesel(key);
+  }
+  dest=reg.rows.length;
+  reg.rows.push(row);
+  return dest;
+}
+
 function pickKeyColumnInteractive(sh){
   let ci=findKeyColumn(sh);
   if(ci>=0) return ci;
@@ -3242,26 +3304,18 @@ function markSystemsToday(systems){
     if(keyCi<0){ toast('Anulowano'); return; }
     REG_META.forEach(nm=>ensureCol(reg,nm,160));
     REG_SYSTEMS.forEach(nm=>ensureCol(reg,nm,100));
+    ensureCol(reg,'NIP',130);
+    ensureCol(reg,'PESEL',130);
     const rmap=registryColMap(reg);
-    let byPesel=registryIndexByPesel(reg);
-    const pci=rmap['PESEL'];
     idxs.forEach(ri=>{
-      const key=normPesel(sh.rows[ri][keyCi]);
+      const key=norm(sh.rows[ri][keyCi]).replace(/[\s-]/g,'');
       if(!key) return;
-      let dest=byPesel.get(key);
-      if(dest==null){
-        const row=Array.from({length:reg.columns.length},()=>'');
-        row[pci]=key;
-        dest=reg.rows.length;
-        reg.rows.push(row);
-        byPesel.set(key, dest);
-      }
+      const dest=ensureRegistryPerson(reg, key);
       list.forEach(name=>{ const ci=rmap[name]; if(ci!=null) reg.rows[dest][ci]=today; });
       tagPersonSource(reg, dest, tag);
       n++;
     });
     refreshRegistryDerived(reg);
-    // Wpisz daty też na liście roboczej + Stan/Komplet
     const listColMap={};
     REG_SYSTEMS.forEach(name=>{
       let ci=sh.columns.indexOf(name);
@@ -3270,14 +3324,13 @@ function markSystemsToday(systems){
     });
     const stanCi=ensureCol(sh,'Stan',120);
     const kompCi=ensureCol(sh,'Komplet',110);
-    byPesel=registryIndexByPesel(reg);
     idxs.forEach(ri=>{
       list.forEach(name=>{
         const ci=listColMap[name];
         if(ci>=0) sh.rows[ri][ci]=today;
       });
-      const key=normPesel(sh.rows[ri][keyCi]);
-      const dest=key?byPesel.get(key):null;
+      const key=norm(sh.rows[ri][keyCi]).replace(/[\s-]/g,'');
+      const dest=key?findRegistryRowByKey(reg, key):null;
       if(dest==null) return;
       const dates=REG_SYSTEMS.map(name=>reg.rows[dest][rmap[name]]||'');
       const {stan,komplet}=computePersonStatus(dates);
@@ -3289,7 +3342,7 @@ function markSystemsToday(systems){
   render();
   scheduleAutosave();
   const label=list.length===REG_SYSTEMS.length?'Komplet':list.join('+');
-  toast(label+' → Zobowiązani ('+n+') · „'+tag+'”');
+  toast(label+' → Zobowiązani ('+n+') · klucz PESEL/NIP · „'+tag+'”');
 }
 function markCompleteToday(){ markSystemsToday(REG_SYSTEMS); }
 function markTrioToday(){ markSystemsToday(['KAWA','JPK','INFZ']); }
@@ -3301,62 +3354,48 @@ function syncListToRegistry(){
   if(sh.name===PARK_SHEET || sh.name==='Archiwum'){ toast('Synchronizacja działa tylko z list roboczych'); return; }
   if(App.workMode==='adhoc'){ toast('Włącz tryb „Z bazą" (u góry), żeby synchronizować'); return; }
 
-  const keyCi=findKeyColumn(sh);
-  if(keyCi<0){
-    const picked=pickKeyColumnInteractive(sh);
-    if(picked<0){ toast('Anulowano — potrzebna kolumna PESEL/NIP'); return; }
-  }
-  const keyCol=findKeyColumn(sh);
+  let keyCol=findKeyColumn(sh);
+  if(keyCol<0) keyCol=pickKeyColumnInteractive(sh);
   if(keyCol<0){ toast('Brak kolumny PESEL/NIP na liście'); return; }
 
-  // Utwórz bazę, jeśli jeszcze nie ma
   const reg=ensureRegistrySheet(false);
   REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
   REG_META.forEach(n=>ensureCol(reg,n,160));
+  ensureCol(reg,'NIP',130);
   ensureCol(reg,'PESEL',130);
 
   const rmap=registryColMap(reg);
-  const pci=rmap['PESEL'];
-  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
-
-  // Kolumny systemów na liście (jeśli są)
   const listSys={};
   REG_SYSTEMS.forEach(name=>{ const ci=sh.columns.indexOf(name); if(ci>=0) listSys[name]=ci; });
   const stanCi=sh.columns.indexOf('Stan');
   const today=todayISO();
   const tag=listSourceTag(sh, ['SYNC']);
-
-  // Zakres: zaznaczone, albo wszystkie wiersze
   const idxs=sh.selected.size?[...sh.selected].sort((a,b)=>a-b):sh.rows.map((_,i)=>i);
 
-  let byPesel=registryIndexByPesel(reg);
   let updated=0, added=0, skipped=0, notInBase=[];
 
   pushUndo();
 
   idxs.forEach(ri=>{
     const row=sh.rows[ri];
-    const key=normPesel(row[keyCol]);
+    const key=norm(row[keyCol]).replace(/[\s-]/g,'');
     if(!key){ skipped++; return; }
 
-    // Daty z kolumn listy (KAWA/JPK…) — to jest źródło prawdy przy sync
     const fromList={};
     let hasListDates=false;
     REG_SYSTEMS.forEach(name=>{
       const ci=listSys[name];
       if(ci==null) return;
       const v=norm(row[ci]);
-      if(v && parseISODate(v)){ fromList[name]=v; hasListDates=true; }
+      if(v && parseISODate(v)){ fromList[name]=parseISODate(v).toISOString().slice(0,10); hasListDates=true; }
       else if(v && /^\d{4}-\d{2}-\d{2}$/.test(v)){ fromList[name]=v; hasListDates=true; }
     });
 
     const stan=stanCi>=0?norm(row[stanCi]):'';
     const stanMarked=!!(stan && stan!==REG_STATUS.todo);
-
-    // Nic do przeniesienia?
     if(!hasListDates && !stanMarked){ skipped++; return; }
 
-    let dest=byPesel.get(key);
+    let dest=findRegistryRowByKey(reg, key);
     if(dest==null){
       notInBase.push({ri, key, fromList, stanMarked});
       return;
@@ -3367,14 +3406,12 @@ function syncListToRegistry(){
       REG_SYSTEMS.forEach(name=>{
         if(!fromList[name]) return;
         const regCi=rmap[name]; if(regCi==null) return;
-        // nadpisz pustą albo przenieś datę z listy
         if(norm(reg.rows[dest][regCi])!==fromList[name]){
           reg.rows[dest][regCi]=fromList[name];
           changed=true;
         }
       });
     }else if(stanMarked){
-      // Fallback: Stan ≠ do zrobienia, ale brak dat na liście → uzupełnij puste systemy dzisiejszą datą
       REG_SYSTEMS.forEach(name=>{
         const regCi=rmap[name]; if(regCi==null) return;
         if(!norm(reg.rows[dest][regCi])){ reg.rows[dest][regCi]=today; changed=true; }
@@ -3383,30 +3420,25 @@ function syncListToRegistry(){
     if(changed){ tagPersonSource(reg, dest, tag); updated++; }
   });
 
-  // Osoby spoza bazy
   if(notInBase.length){
     const names=notInBase.slice(0,5).map(x=>x.key).join(', ')+(notInBase.length>5?'…':'');
-    const add=confirm('Znaleziono '+notInBase.length+' osób spoza bazy:\n'+names+'\n\nDodać je do Zobowiązanych z datami z listy?');
+    const add=confirm('Znaleziono '+notInBase.length+' osób spoza bazy (po PESEL/NIP):\n'+names+'\n\nDodać je do Zobowiązanych z datami z listy?');
     if(add){
       notInBase.forEach(({key, fromList, stanMarked})=>{
-        const newRow=Array.from({length:reg.columns.length},()=>'');
-        newRow[pci]=key;
+        const dest=ensureRegistryPerson(reg, key);
         let any=false;
         if(Object.keys(fromList).length){
           REG_SYSTEMS.forEach(name=>{
             const regCi=rmap[name]; if(regCi==null) return;
-            if(fromList[name]){ newRow[regCi]=fromList[name]; any=true; }
+            if(fromList[name]){ reg.rows[dest][regCi]=fromList[name]; any=true; }
           });
         }else if(stanMarked){
           REG_SYSTEMS.forEach(name=>{
-            const regCi=rmap[name]; if(regCi!=null){ newRow[regCi]=today; any=true; }
+            const regCi=rmap[name]; if(regCi!=null){ reg.rows[dest][regCi]=today; any=true; }
           });
         }
         if(!any) return;
-        const srcCi=rmap['Źródła'];
-        if(srcCi!=null) newRow[srcCi]=tag;
-        reg.rows.push(newRow);
-        byPesel.set(key, reg.rows.length-1);
+        tagPersonSource(reg, dest, tag);
         added++;
       });
     }
@@ -3414,15 +3446,13 @@ function syncListToRegistry(){
 
   refreshRegistryDerived(reg);
 
-  // Odśwież Stan/Komplet (+ daty systemów) na liście z bazy
   const stanOut=ensureCol(sh,'Stan',120);
   const kompOut=ensureCol(sh,'Komplet',110);
   REG_SYSTEMS.forEach(name=>ensureCol(sh, name, 90));
-  byPesel=registryIndexByPesel(reg);
   const rmap2=registryColMap(reg);
   idxs.forEach(ri=>{
-    const key=normPesel(sh.rows[ri][keyCol]);
-    const dest=key?byPesel.get(key):null;
+    const key=norm(sh.rows[ri][keyCol]).replace(/[\s-]/g,'');
+    const dest=key?findRegistryRowByKey(reg, key):null;
     if(dest==null) return;
     REG_SYSTEMS.forEach(name=>{
       const lci=sh.columns.indexOf(name);
@@ -3442,8 +3472,8 @@ function syncListToRegistry(){
   const msg=[];
   if(updated) msg.push('zaktualizowano '+updated);
   if(added) msg.push('dodano '+added);
-  if(!msg.length) toast('Synchronizacja: nic do przeniesienia (brak dat KAWA/JPK… ani oznaczeń Stan na liście)');
-  else toast('Synchronizacja: '+msg.join(', ')+' → Zobowiązani');
+  if(!msg.length) toast('Synchronizacja: nic do przeniesienia (brak dat / oznaczeń albo NIP nie pasuje do bazy)');
+  else toast('Synchronizacja: '+msg.join(', ')+' → Zobowiązani (PESEL/NIP)');
 }
 function addMissingToRegistry(){
   const sh=active();
@@ -3452,65 +3482,30 @@ function addMissingToRegistry(){
   if(sh.name===PARK_SHEET || sh.name==='Archiwum'){ toast('Działa tylko z list roboczych'); return; }
   if(!sh.rows.length){ toast('Lista jest pusta'); return; }
 
-  const keyCi=findKeyColumn(sh);
+  let keyCi=findKeyColumn(sh);
+  if(keyCi<0) keyCi=pickKeyColumnInteractive(sh);
   if(keyCi<0){ toast('Brak kolumny PESEL/NIP — nie mogę porównać'); return; }
 
-  let reg=getRegistrySheet();
-  if(!reg){
-    reg=ensureRegistrySheet(false);
-  }
-  
-  const rmap=registryColMap(reg);
-  const pci=rmap['PESEL'];
-  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
+  const reg=ensureRegistrySheet(false);
+  ensureCol(reg,'NIP',130);
+  ensureCol(reg,'PESEL',130);
+  REG_SYSTEMS.forEach(n=>ensureCol(reg,n,100));
+  REG_META.forEach(n=>ensureCol(reg,n,160));
 
-  const byPesel=registryIndexByPesel(reg);
-  
-  let added=0, skipped=0;
-  const toAdd=[];
-  
-  sh.rows.forEach((row, ri)=>{
-    const key=normPesel(row[keyCi]);
-    if(!key){ skipped++; return; }
-    if(byPesel.has(key)){ skipped++; return; }
-    toAdd.push({key, row: row.slice()});
-  });
-
-  if(!toAdd.length){
-    toast('Wszystkie osoby z listy są już w bazie ('+skipped+' pominięto)');
-    return;
-  }
-
-  if(!confirm('Dodać '+toAdd.length+' nowych osób do bazy?\n('+skipped+' już istnieje — nie będą ruszone)')){
-    return;
-  }
-
+  const idxs=sh.selected.size?[...sh.selected].sort((a,b)=>a-b):sh.rows.map((_,i)=>i);
+  let added=0, known=0, skipped=0;
   pushUndo();
-  const tag=listSourceTag(sh, []);
-  
-  toAdd.forEach(({key, row})=>{
-    const newRow=Array.from({length:reg.columns.length},()=>'');
-    newRow[pci]=key;
-    
-    // Skopiuj dane z listy do odpowiednich kolumn bazy (jeśli nazwy się zgadzają)
-    sh.columns.forEach((colName, ci)=>{
-      const regCi=rmap[colName];
-      if(regCi!=null && regCi!==pci){
-        newRow[regCi]=row[ci]||'';
-      }
-    });
-    
-    const srcCi=rmap['Źródła'];
-    if(srcCi!=null) newRow[srcCi]=tag;
-    
-    reg.rows.push(newRow);
-    byPesel.set(key, reg.rows.length-1);
+  idxs.forEach(ri=>{
+    const key=norm(sh.rows[ri][keyCi]).replace(/[\s-]/g,'');
+    if(!key){ skipped++; return; }
+    if(findRegistryRowByKey(reg, key)!=null){ known++; return; }
+    ensureRegistryPerson(reg, key);
     added++;
   });
-
   refreshRegistryDerived(reg);
   render();
-  toast('Dodano '+added+' nowych osób do bazy ('+skipped+' pominięto — już były)');
+  scheduleAutosave();
+  toast('Dodaj do bazy: +'+added+' nowych · już było '+known+(skipped?' · bez klucza '+skipped:''));
 }
 
 function fillRegSysMenu(){ /* legacy no-op */ }
@@ -3853,34 +3848,33 @@ function runReworkGuard(){
 
   const reg=getRegistrySheet();
   if(reg) refreshRegistryDerived(reg);
-  const by=reg?registryIndexByPesel(reg):new Map();
   const rmap=reg?registryColMap(reg):{};
   const arch=archivePeselSet();
   const parkWait=parkingWaitPeselSet();
   let hits=0;
 
   sh.rows.forEach((row,ri)=>{
-    const key=normPesel(row[keyCi]);
+    const key=norm(row[keyCi]).replace(/[\s-]/g,'');
     const flags=[];
-    if(key && arch.has(key)) flags.push('Archiwum');
-    if(key && parkWait.has(key)) flags.push('parking');
-    if(key && reg && by.has(key)){
-      const dest=by.get(key);
-      const rrow=reg.rows[dest]||[];
-      const stan=rmap.Stan!=null?norm(rrow[rmap.Stan]):'';
-      const done=[];
-      REG_SYSTEMS.forEach(name=>{
-        const ci=rmap[name];
-        if(ci!=null && norm(rrow[ci])) done.push(name);
-      });
-      if(stan===REG_STATUS.today || stan===REG_STATUS.ok || done.length===REG_SYSTEMS.length){
-        flags.push('świeży komplet'+(done.length?(' ('+done.join('+')+')'):''));
-      }else if(stan===REG_STATUS.partial || (done.length>0 && done.length<REG_SYSTEMS.length)){
-        flags.push('częściowo obróbiony: '+done.join('+'));
-      }
-      if(stan===REG_STATUS.overdue) flags.push('>100 dni');
-      if(stan===REG_STATUS.todo && !done.length){
-        /* w bazie, ale bez sprawdzeń — bez ostrzeżenia */
+    const peselLike=keyKind(key)==='pesel'?normPesel(key):'';
+    if(peselLike && arch.has(peselLike)) flags.push('Archiwum');
+    if(peselLike && parkWait.has(peselLike)) flags.push('parking');
+    if(key && reg){
+      const dest=findRegistryRowByKey(reg, key);
+      if(dest!=null){
+        const rrow=reg.rows[dest]||[];
+        const stan=rmap.Stan!=null?norm(rrow[rmap.Stan]):'';
+        const done=[];
+        REG_SYSTEMS.forEach(name=>{
+          const ci=rmap[name];
+          if(ci!=null && norm(rrow[ci])) done.push(name);
+        });
+        if(stan===REG_STATUS.today || stan===REG_STATUS.ok || done.length===REG_SYSTEMS.length){
+          flags.push('świeży komplet'+(done.length?(' ('+done.join('+')+')'):''));
+        }else if(stan===REG_STATUS.partial || (done.length>0 && done.length<REG_SYSTEMS.length)){
+          flags.push('częściowo obróbiony: '+done.join('+'));
+        }
+        if(stan===REG_STATUS.overdue) flags.push('>100 dni');
       }
     }
     if(flags.length){
