@@ -68,7 +68,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .grid thead th.corner{z-index:6;background:color-mix(in srgb,var(--head) 90%,#000)}
 .grid td.corner{background:var(--panel2);color:var(--muted);font-size:.72rem;z-index:3}
 .th-inner{display:flex;align-items:center;gap:5px;padding:8px 9px;user-select:none}
-.th-inner .title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;word-break:break-word;line-height:1.2}
 .th-inner .meta{opacity:.65;font-size:.68rem;font-family:var(--mono)}.th-inner .sort{opacity:.5;font-size:.68rem}
 .filter-btn{border:0;background:transparent;color:inherit;cursor:pointer;opacity:.8;padding:0}.filter-btn.on{color:#fde68a;opacity:1}
 .resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}.grid th{position:sticky}
@@ -326,6 +326,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
       <button class="btn sm primary" id="btnRegComplete" type="button" title="Wszystkie 5 systemów = dziś" style="color:#fff">Komplet</button>
       <span class="sep"></span>
       <button class="btn sm" id="btnSyncToBase" type="button" title="Przenieś oznaczenia z listy do bazy Zobowiązanych (tryb Z bazą). Osoby spoza bazy → dialog.">Synchronizuj z bazą</button>
+      <button class="btn sm" id="btnAddToBase" type="button" title="Porównaj listę z bazą i dodaj tylko brakujące osoby (nie rusza istniejących)">Dodaj do bazy</button>
       <button class="btn sm" id="btnSetKeyCol" type="button" title="Ręcznie wskaż kolumnę z PESEL/NIP na tej liście (gdy automatyczne wykrywanie nie działa)">Ustaw kolumnę klucza</button>
       <button class="btn sm" id="btnRegDossier" type="button" title="Kartoteka: Zobowiązani + Na później">Kartoteka</button>
       <button class="btn sm" id="btnRegGuard" type="button" title="Oznacz powtórki: Archiwum / świeży komplet / parking">Strażnik</button>
@@ -451,6 +452,7 @@ const SCHEMA_KEY='ots_schemas_v1';
 const AUTOSAVE_KEY='ots_autosave_v1';
 const COPY_MODE_KEY='ots_copy_mode_v1';
 const WORK_MODE_KEY='ots_work_mode_v1';
+const VIEW_PREFS_KEY='ots_view_prefs_v1';
 const PASTE_HIST_MAX=12;
 const ROW_PALETTE=[
   {code:'', label:'Bez koloru', bg:'#fff'},
@@ -532,15 +534,16 @@ function fitColumnWidths(sh, opts){
   if(!sh||!sh.columns.length) return false;
   const cols=visCols(sh);
   const idxs=sorted(sh, filtered(sh));
-  const headFont='650 13px "Segoe UI",system-ui,sans-serif';
   const cellFont='14px "Segoe UI",system-ui,sans-serif';
-  const maxW=opts.maxWidth||520;
+  const maxW=opts.maxWidth||400;
   const minW=opts.minWidth||72;
+  const maxHeadW=150;
   cols.forEach(ci=>{
-    let max=measureTextWidth(sh.columns[ci], headFont)+56;
+    let maxData=minW;
     const sample=idxs.length>800?idxs.filter((_,i)=>i%Math.ceil(idxs.length/800)===0):idxs;
-    sample.forEach(ri=>{ max=Math.max(max, measureTextWidth(sh.rows[ri][ci], cellFont)+28); });
-    sh.widths[ci]=Math.min(maxW, Math.max(minW, Math.ceil(max)));
+    sample.forEach(ri=>{ maxData=Math.max(maxData, measureTextWidth(sh.rows[ri][ci], cellFont)+28); });
+    const headW=Math.min(maxHeadW, measureTextWidth(sh.columns[ci], cellFont)+40);
+    sh.widths[ci]=Math.min(maxW, Math.max(minW, Math.ceil(Math.max(maxData, headW))));
   });
   if(opts.wrap!==false) App.wrap=true;
   return true;
@@ -1895,6 +1898,9 @@ function buildRowTr(sh, ri, displayIdx, cols, idxs){
 function renderSheetBar(){
   const bar=$('sheetbar'); bar.innerHTML='';
   App.sheets.forEach(sh=>{
+    // W trybie doraźnym ukryj kartę Zobowiązani
+    if(App.workMode==='adhoc' && isRegistrySheet(sh)) return;
+    
     const b=document.createElement('button'); b.type='button';
     let cls='sheet'+(sh.id===App.activeId?' active':'');
     if(isRegistrySheet(sh)) cls+=' sheet-base';
@@ -1902,7 +1908,7 @@ function renderSheetBar(){
     b.className=cls; b.draggable=true;
     if(isRegistrySheet(sh)) b.title='BAZA ludzi — wklejasz zobowiązanych (PESEL)';
     else if(sh.name===PARK_SHEET) b.title='Odłożone sprawy';
-    else b.title='Lista do obróbki — wklejasz raporty';
+    else b.title='Lista do obróbki — wklejasz raporty. PPM = opcje.';
     if(sh._renaming){ const inp=document.createElement('input'); inp.value=sh.name; inp.onclick=e=>e.stopPropagation();
       const done=()=>{sh.name=inp.value.trim()||sh.name; sh._renaming=false; render();};
       inp.onkeydown=e=>{if(e.key==='Enter')done(); if(e.key==='Escape'){sh._renaming=false; renderSheetBar();}}; inp.onblur=done; b.append(inp); setTimeout(()=>inp.select(),0);
@@ -1915,6 +1921,7 @@ function renderSheetBar(){
         render();
       };
       b.ondblclick=e=>{e.preventDefault(); sh._renaming=true; renderSheetBar();};
+      b.oncontextmenu=e=>openSheetContextMenu(e, sh);
     }
     b.ondragstart=e=>{App.dragSheet=sh.id; b.classList.add('dragging'); e.dataTransfer.effectAllowed='move';};
     b.ondragend=()=>{App.dragSheet=null; document.querySelectorAll('.sheet').forEach(x=>x.classList.remove('dragging','drag-over'));};
@@ -1923,6 +1930,60 @@ function renderSheetBar(){
     bar.append(b);
   });
   const add=document.createElement('button'); add.type='button'; add.className='sheet-add'; add.textContent='＋'; add.onclick=()=>{const s=newSheet('Robocza '+App.sheets.length); App.sheets.push(s); App.activeId=s.id; render();}; bar.append(add);
+}
+
+function openSheetContextMenu(e, sh){
+  e.preventDefault();
+  e.stopPropagation();
+  const ctx=$('ctxMenu');
+  ctx.innerHTML='';
+  ctx.className='ctx open';
+  
+  const isReg=isRegistrySheet(sh);
+  const isPark=sh.name===PARK_SHEET;
+  const isArch=sh.name==='Archiwum';
+  const isProtected=isReg||isPark||isArch;
+  
+  const addBtn=(label, action, danger)=>{
+    const btn=document.createElement('button');
+    btn.textContent=label;
+    if(danger) btn.style.color='var(--danger)';
+    btn.onclick=()=>{ ctx.classList.remove('open'); action(); };
+    ctx.append(btn);
+  };
+  
+  addBtn('Zmień nazwę', ()=>{ sh._renaming=true; renderSheetBar(); });
+  
+  if(!isProtected){
+    const sep=document.createElement('div'); sep.className='sep'; ctx.append(sep);
+    addBtn('Wyczyść kartę', ()=>{
+      if(!confirm('Wyczyścić kartę „'+sh.name+'"?')) return;
+      pushUndo();
+      Object.assign(sh,{columns:[],rows:[],order:[],visible:[],widths:[],sort:{i:-1,d:1},filter:'',colFilters:{},rowColors:{},marks:{},rowStatus:{},hiddenRows:new Set()});
+      sh.selected.clear();
+      render();
+      toast('Wyczyszczono kartę');
+    });
+    addBtn('Usuń kartę', ()=>{
+      if(App.sheets.length<=1){ toast('Musi zostać przynajmniej jedna karta'); return; }
+      if(!confirm('Usunąć kartę „'+sh.name+'"?')) return;
+      pushUndo();
+      const idx=App.sheets.findIndex(x=>x.id===sh.id);
+      App.sheets.splice(idx,1);
+      if(App.activeId===sh.id) App.activeId=App.sheets[0].id;
+      render();
+      toast('Usunięto kartę');
+    }, true);
+  }else{
+    const sep=document.createElement('div'); sep.className='sep'; ctx.append(sep);
+    const info=document.createElement('div');
+    info.style.cssText='padding:8px 10px;font-size:.75rem;color:var(--muted)';
+    info.textContent=isReg?'Baza Zobowiązanych — nie można usunąć':isPark?'Parking — nie można usunąć':'Archiwum — nie można usunąć';
+    ctx.append(info);
+  }
+  
+  ctx.style.left=Math.min(e.clientX, window.innerWidth-220)+'px';
+  ctx.style.top=Math.min(e.clientY, window.innerHeight-200)+'px';
 }
 
 function addColumn(refCi, before){
@@ -2633,6 +2694,17 @@ function setWorkMode(mode, silent){
   App.workMode=(mode==='linked')?'linked':'adhoc';
   try{ localStorage.setItem(WORK_MODE_KEY, App.workMode); }catch(_){}
   syncWorkModeUI();
+  
+  // W trybie doraźnym: jeśli jesteśmy na karcie Zobowiązani, przełącz na inną
+  if(App.workMode==='adhoc'){
+    const curr=active();
+    if(curr && isRegistrySheet(curr)){
+      const other=App.sheets.find(s=>!isRegistrySheet(s));
+      if(other) App.activeId=other.id;
+    }
+  }
+  
+  renderSheetBar();
   if(!silent){
     toast(App.workMode==='linked'
       ?'Tryb Z BAZĄ: listy automatycznie powiązane z Zobowiązanymi. Oznaczenia → baza.'
@@ -2645,6 +2717,21 @@ function loadWorkMode(){
     App.workMode=(m==='linked')?'linked':'adhoc';
   }catch(_){ App.workMode='adhoc'; }
   syncWorkModeUI();
+}
+function saveViewPrefs(){
+  try{
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({center:App.center, wrap:App.wrap}));
+  }catch(_){}
+}
+function loadViewPrefs(){
+  try{
+    const s=localStorage.getItem(VIEW_PREFS_KEY);
+    if(s){
+      const p=JSON.parse(s);
+      App.center=!!p.center;
+      App.wrap=!!p.wrap;
+    }
+  }catch(_){}
 }
 async function copySelected(opts){
   opts=opts||{};
@@ -2837,9 +2924,10 @@ function findKeyColumn(sh){
 function finalizeLinkedListAfterPaste(sh){
   if(!sh || isRegistrySheet(sh)) return [];
   const added=[];
-  ['Stan','Komplet'].forEach(n=>{
+  [...REG_SYSTEMS, 'Stan', 'Komplet'].forEach(n=>{
     const had=sh.columns.indexOf(n)>=0;
-    const ci=ensureCol(sh, n, n==='Komplet'?110:100);
+    const w = (n==='Stan'||n==='Komplet') ? 100 : 90;
+    const ci=ensureCol(sh, n, w);
     if(ci>=0 && !had) added.push(n);
   });
   return added;
@@ -3169,11 +3257,21 @@ function markSystemsToday(systems){
       n++;
     });
     refreshRegistryDerived(reg);
-    // od razu widać efekt na liście — bez osobnego „Pokaż status”
+    // Wpisz daty na liście roboczej + aktualizuj Stan/Komplet
+    const listColMap={};
+    REG_SYSTEMS.forEach(name=>{
+      let ci=sh.columns.indexOf(name);
+      if(ci<0) ci=ensureCol(sh, name, 90);
+      listColMap[name]=ci;
+    });
     const stanCi=ensureCol(sh,'Stan',120);
     const kompCi=ensureCol(sh,'Komplet',110);
     byPesel=registryIndexByPesel(reg);
     idxs.forEach(ri=>{
+      list.forEach(name=>{
+        const ci=listColMap[name];
+        if(ci>=0) sh.rows[ri][ci]=today;
+      });
       const key=normPesel(sh.rows[ri][keyCi]);
       const dest=key?byPesel.get(key):null;
       if(dest==null) return;
@@ -3266,6 +3364,74 @@ function syncListToRegistry(){
 
   render();
   toast('Synchronizacja: '+updated+' osób zaktualizowanych w bazie');
+}
+
+function addMissingToRegistry(){
+  const sh=active();
+  if(!sh){ toast('Brak aktywnej karty'); return; }
+  if(isRegistrySheet(sh)){ toast('Jesteś na bazie — ta funkcja dodaje z listy do bazy'); return; }
+  if(sh.name===PARK_SHEET || sh.name==='Archiwum'){ toast('Działa tylko z list roboczych'); return; }
+  if(!sh.rows.length){ toast('Lista jest pusta'); return; }
+
+  const keyCi=findKeyColumn(sh);
+  if(keyCi<0){ toast('Brak kolumny PESEL/NIP — nie mogę porównać'); return; }
+
+  let reg=getRegistrySheet();
+  if(!reg){
+    reg=ensureRegistrySheet(false);
+  }
+  
+  const rmap=registryColMap(reg);
+  const pci=rmap['PESEL'];
+  if(pci==null){ toast('Baza nie ma kolumny PESEL'); return; }
+
+  const byPesel=registryIndexByPesel(reg);
+  
+  let added=0, skipped=0;
+  const toAdd=[];
+  
+  sh.rows.forEach((row, ri)=>{
+    const key=normPesel(row[keyCi]);
+    if(!key){ skipped++; return; }
+    if(byPesel.has(key)){ skipped++; return; }
+    toAdd.push({key, row: row.slice()});
+  });
+
+  if(!toAdd.length){
+    toast('Wszystkie osoby z listy są już w bazie ('+skipped+' pominięto)');
+    return;
+  }
+
+  if(!confirm('Dodać '+toAdd.length+' nowych osób do bazy?\n('+skipped+' już istnieje — nie będą ruszone)')){
+    return;
+  }
+
+  pushUndo();
+  const tag=listSourceTag(sh, []);
+  
+  toAdd.forEach(({key, row})=>{
+    const newRow=Array.from({length:reg.columns.length},()=>'');
+    newRow[pci]=key;
+    
+    // Skopiuj dane z listy do odpowiednich kolumn bazy (jeśli nazwy się zgadzają)
+    sh.columns.forEach((colName, ci)=>{
+      const regCi=rmap[colName];
+      if(regCi!=null && regCi!==pci){
+        newRow[regCi]=row[ci]||'';
+      }
+    });
+    
+    const srcCi=rmap['Źródła'];
+    if(srcCi!=null) newRow[srcCi]=tag;
+    
+    reg.rows.push(newRow);
+    byPesel.set(key, reg.rows.length-1);
+    added++;
+  });
+
+  refreshRegistryDerived(reg);
+  render();
+  toast('Dodano '+added+' nowych osób do bazy ('+skipped+' pominięto — już były)');
 }
 
 function fillRegSysMenu(){ /* legacy no-op */ }
@@ -4230,7 +4396,7 @@ document.querySelectorAll('#copyToggle [data-copy-mode]').forEach(b=>{
 document.querySelectorAll('#workModeToggle [data-work-mode]').forEach(b=>{
   b.onclick=()=>setWorkMode(b.dataset.workMode);
 });
-$('btnWrap').onclick=()=>{pushUndo(); App.wrap=!App.wrap; render();}; $('btnCenter').onclick=()=>{pushUndo(); App.center=!App.center; render();};
+$('btnWrap').onclick=()=>{pushUndo(); App.wrap=!App.wrap; saveViewPrefs(); render();}; $('btnCenter').onclick=()=>{pushUndo(); App.center=!App.center; saveViewPrefs(); render();};
 if($('btnToggleSums')) $('btnToggleSums').onclick=()=>{ const sh=active(); if(!sh) return; pushUndo(); sh.showSums = !sh.showSums; renderGrid(); };
 $('btnAutoFit').onclick=()=>autoFitColumns();
 $('btnRenumber').onclick=()=>renumberByView();
@@ -4286,6 +4452,7 @@ document.querySelectorAll('[data-sys-today]').forEach(b=>{
 });
 $('btnRegTrio').onclick=markTrioToday;
 $('btnSyncToBase').onclick=syncListToRegistry;
+$('btnAddToBase').onclick=addMissingToRegistry;
 $('btnSetKeyCol').onclick=setKeyColumnManual;
 $('btnRegDossier').onclick=openPersonDossier;
 $('btnRegGuard').onclick=runReworkGuard;
@@ -4310,9 +4477,7 @@ $('btnSchemas').onclick=e=>{e.stopPropagation(); renderSchemaMenu(); $('schemaMe
 document.querySelectorAll('.ribbon-tab').forEach(tab=>{
   tab.onclick=()=>{
     const t=tab.dataset.tab;
-    if(t==='rejestr') setRibbonTab('rejestr', {goBase:true});
-    else if(t==='dane') setRibbonTab('dane', {goLista:true});
-    else setRibbonTab(t);
+    setRibbonTab(t);
   };
 });
 $('btnExport').onclick=e=>{e.stopPropagation(); $('exportMenu').classList.toggle('open');};
@@ -4447,7 +4612,7 @@ document.addEventListener('keydown', e=>{
   }
 });
 
-loadSchemas(); loadCopyMode(); loadWorkMode(); ensureBase(); tryRestoreAutosave(); renderSwatches(); fillRegSysMenu(); setRibbonTab(App.ribbonTab||'dane'); render(); scheduleAutosave();
+loadSchemas(); loadCopyMode(); loadWorkMode(); loadViewPrefs(); ensureBase(); tryRestoreAutosave(); renderSwatches(); fillRegSysMenu(); setRibbonTab(App.ribbonTab||'dane'); render(); scheduleAutosave();
 })();
 </script>
 </body>
