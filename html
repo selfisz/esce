@@ -68,7 +68,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .grid thead th.corner{z-index:6;background:color-mix(in srgb,var(--head) 90%,#000)}
 .grid td.corner{background:var(--panel2);color:var(--muted);font-size:.72rem;z-index:3}
 .th-inner{display:flex;align-items:center;gap:5px;padding:8px 9px;user-select:none}
-.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.2}
+.th-inner .title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .th-inner .meta{opacity:.65;font-size:.68rem;font-family:var(--mono)}.th-inner .sort{opacity:.5;font-size:.68rem}
 .filter-btn{border:0;background:transparent;color:inherit;cursor:pointer;opacity:.8;padding:0}.filter-btn.on{color:#fde68a;opacity:1}
 .resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}.grid th{position:sticky}
