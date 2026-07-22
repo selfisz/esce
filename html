@@ -454,6 +454,7 @@ const COPY_MODE_KEY='ots_copy_mode_v1';
 const WORK_MODE_KEY='ots_work_mode_v1';
 const VIEW_PREFS_KEY='ots_view_prefs_v1';
 const PASTE_HIST_MAX=12;
+const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 const ROW_PALETTE=[
   {code:'', label:'Bez koloru', bg:'#fff'},
   {code:'yellow', label:'Żółty', bg:'#eab308'},
@@ -545,15 +546,18 @@ function fitColumnWidths(sh, opts){
     const headW=Math.min(maxHeadW, measureTextWidth(sh.columns[ci], cellFont)+40);
     sh.widths[ci]=Math.min(maxW, Math.max(minW, Math.ceil(Math.max(maxData, headW))));
   });
-  if(opts.wrap!==false) App.wrap=true;
+  // Nie włączaj zawijania przy dużych tabelach — zabija wirtualizację i wiesza przeglądarkę
+  if(opts.wrap===true && idxs.length<VIRT_THRESHOLD) App.wrap=true;
   return true;
 }
 function autoFitColumns(){
   const sh=active(); if(!sh||!sh.columns.length){ toast('Brak kolumn'); return; }
   pushUndo();
-  fitColumnWidths(sh, {wrap:true});
+  const big=(sorted(sh, filtered(sh)).length>=VIRT_THRESHOLD);
+  fitColumnWidths(sh, {wrap:!big});
+  if(big) App.wrap=false;
   render();
-  toast('Autodopasowano kolumny (+ zawijanie)');
+  toast(big?'Autodopasowano kolumny (bez zawijania — duża tabela)':'Autodopasowano kolumny (+ zawijanie)');
 }
 /** Po sortowaniu: LP (lub 1. kolumna) = 1…N w kolejności na ekranie. */
 function renumberByView(){
@@ -1488,12 +1492,13 @@ function loadMatrix(matrix, append){
     setRibbonTab('edycja');
   }
   let fitted=false;
+  const allowWrap=(p.rows.length<VIRT_THRESHOLD);
   if(App.activeSchema && !isRegistrySheet(sh)){
     const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?');
     if(ok) applySchemaByName(App.activeSchema,false);
-    else { fitColumnWidths(sh,{wrap:true}); fitted=true; render(); }
+    else { fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render(); }
   }else{
-    fitColumnWidths(sh,{wrap:true}); fitted=true; render();
+    fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render();
   }
   if(fitted) msg+=' · kolumny dopasowane';
   toast(msg);
@@ -1709,7 +1714,6 @@ function setActiveCell(sh,ri,ci,cellEl){
   if(cellEl && !App.editing) selectAllText(cellEl);
 }
 
-const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 
 function normSelRange(r0,c0,r1,c1){
   return {r0:Math.min(r0,r1), c0:Math.min(c0,c1), r1:Math.max(r0,r1), c1:Math.max(c0,c1)};
@@ -2224,8 +2228,10 @@ function renderGrid(){
   const sh=active(); if(!sh) return;
   const grid=$('dataGrid'), empty=$('emptyState'), head=$('gridHead'), body=$('gridBody'), foot=$('gridFoot'), cg=$('colgroup');
   const wrap=$('gridWrap');
-  grid.classList.toggle('wrap',App.wrap); grid.classList.toggle('center',App.center); grid.classList.toggle('plain',!!App.plain);
   const cols=visCols(sh); const idxs=sorted(sh, filtered(sh));
+  // Duże tabele: wymuś wirtualizację (zawijanie zabija DOM)
+  if(idxs.length>=VIRT_THRESHOLD && App.wrap){ App.wrap=false; try{saveViewPrefs();}catch(_){} }
+  grid.classList.toggle('wrap',App.wrap); grid.classList.toggle('center',App.center); grid.classList.toggle('plain',!!App.plain);
   if(!sh.rows.length){
     empty.classList.remove('hidden'); grid.hidden=true; head.innerHTML=''; body.innerHTML=''; if(foot) foot.innerHTML=''; cg.innerHTML='';
     const card=empty.querySelector('.empty-card');
@@ -2297,8 +2303,8 @@ function renderGrid(){
   const savedScroll=wrap?wrap.scrollTop:0;
   body.innerHTML='';
 
-  // Wirtualizacja: stała wysokość wiersza (unikaj skoków scrolla). Przy zawijaniu tekstu — wyłącz.
-  const useVirt=idxs.length>=VIRT_THRESHOLD && !App.editing && !App.wrap;
+  // Wirtualizacja: stała wysokość wiersza (unikaj skoków scrolla)
+  const useVirt=idxs.length>=VIRT_THRESHOLD && !App.editing;
   grid.classList.toggle('virt-mode', !!useVirt);
   let start=0, end=idxs.length;
   if(useVirt && wrap){
@@ -4396,7 +4402,13 @@ document.querySelectorAll('#copyToggle [data-copy-mode]').forEach(b=>{
 document.querySelectorAll('#workModeToggle [data-work-mode]').forEach(b=>{
   b.onclick=()=>setWorkMode(b.dataset.workMode);
 });
-$('btnWrap').onclick=()=>{pushUndo(); App.wrap=!App.wrap; saveViewPrefs(); render();}; $('btnCenter').onclick=()=>{pushUndo(); App.center=!App.center; saveViewPrefs(); render();};
+$('btnWrap').onclick=()=>{
+  const sh=active();
+  const n=sh?sorted(sh, filtered(sh)).length:0;
+  if(!App.wrap && n>=VIRT_THRESHOLD){ toast('Zawijanie niedostępne przy '+n+' wierszach (wiesza przeglądarkę)'); return; }
+  pushUndo(); App.wrap=!App.wrap; saveViewPrefs(); render();
+};
+$('btnCenter').onclick=()=>{pushUndo(); App.center=!App.center; saveViewPrefs(); render();};
 if($('btnToggleSums')) $('btnToggleSums').onclick=()=>{ const sh=active(); if(!sh) return; pushUndo(); sh.showSums = !sh.showSums; renderGrid(); };
 $('btnAutoFit').onclick=()=>autoFitColumns();
 $('btnRenumber').onclick=()=>renumberByView();
