@@ -68,7 +68,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width
 .grid thead th.corner{z-index:6;background:color-mix(in srgb,var(--head) 90%,#000)}
 .grid td.corner{background:var(--panel2);color:var(--muted);font-size:.72rem;z-index:3}
 .th-inner{display:flex;align-items:center;gap:5px;padding:8px 9px;user-select:none}
-.th-inner .title{font-weight:650;overflow:hidden;flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.2}
+.th-inner .title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .th-inner .meta{opacity:.65;font-size:.68rem;font-family:var(--mono)}.th-inner .sort{opacity:.5;font-size:.68rem}
 .filter-btn{border:0;background:transparent;color:inherit;cursor:pointer;opacity:.8;padding:0}.filter-btn.on{color:#fde68a;opacity:1}
 .resize{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize}.grid th{position:sticky}
@@ -452,6 +452,7 @@ const AUTOSAVE_KEY='ots_autosave_v1';
 const COPY_MODE_KEY='ots_copy_mode_v1';
 const WORK_MODE_KEY='ots_work_mode_v1';
 const VIEW_PREFS_KEY='ots_view_prefs_v1';
+const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 const PASTE_HIST_MAX=12;
 const ROW_PALETTE=[
   {code:'', label:'Bez koloru', bg:'#fff'},
@@ -551,9 +552,11 @@ function fitColumnWidths(sh, opts){
 function autoFitColumns(){
   const sh=active(); if(!sh||!sh.columns.length){ toast('Brak kolumn'); return; }
   pushUndo();
-  fitColumnWidths(sh, {wrap:true});
+  const big=(sorted(sh, filtered(sh)).length>=VIRT_THRESHOLD);
+  fitColumnWidths(sh, {wrap:!big});
+  if(big) App.wrap=false;
   render();
-  toast('Autodopasowano kolumny (+ zawijanie)');
+  toast(big?'Autodopasowano kolumny (bez zawijania — duża tabela)':'Autodopasowano kolumny (+ zawijanie)');
 }
 /** Po sortowaniu: LP (lub 1. kolumna) = 1…N w kolejności na ekranie. */
 function renumberByView(){
@@ -1488,12 +1491,13 @@ function loadMatrix(matrix, append){
     setRibbonTab('edycja');
   }
   let fitted=false;
+  const allowWrap=(p.rows.length<VIRT_THRESHOLD);
   if(App.activeSchema && !isRegistrySheet(sh)){
     const ok=confirm('Zastosować schemat „'+App.activeSchema+'”?');
     if(ok) applySchemaByName(App.activeSchema,false);
-    else { fitColumnWidths(sh,{wrap:true}); fitted=true; render(); }
+    else { fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render(); }
   }else{
-    fitColumnWidths(sh,{wrap:true}); fitted=true; render();
+    fitColumnWidths(sh,{wrap:allowWrap}); if(!allowWrap) App.wrap=false; fitted=true; render();
   }
   if(fitted) msg+=' · kolumny dopasowane';
   toast(msg);
@@ -1708,8 +1712,6 @@ function setActiveCell(sh,ri,ci,cellEl){
   if(!App.editing) cv.textContent=sh.rows[ri][ci]??'';
   if(cellEl && !App.editing) selectAllText(cellEl);
 }
-
-const ROW_H=34, VIRT_THRESHOLD=250, VIRT_BUFFER=12;
 
 function normSelRange(r0,c0,r1,c1){
   return {r0:Math.min(r0,r1), c0:Math.min(c0,c1), r1:Math.max(r0,r1), c1:Math.max(c0,c1)};
